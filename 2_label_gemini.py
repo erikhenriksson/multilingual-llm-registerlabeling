@@ -14,6 +14,7 @@ Optional:
 
 import argparse
 import json
+import mmap
 import os
 import re
 import sys
@@ -552,45 +553,97 @@ def doc_has_errors(row):
     return False
 
 
+def _build_offset_index(path):
+    """Build a list of byte offsets for each line in a file.
+
+    Returns list where index[i] = byte offset of line i. This lets us
+    seek to any line without loading the whole file.
+    Memory: ~8 bytes per line (just the offset integer), vs the full line content.
+    """
+    offsets = []
+    with open(path, "rb") as f:
+        while True:
+            pos = f.tell()
+            line = f.readline()
+            if not line:
+                break
+            offsets.append(pos)
+    return offsets
+
+
+def _read_line_by_offset(path, offset):
+    """Read a single line from a file given its byte offset."""
+    with open(path, "rb") as f:
+        f.seek(offset)
+        return f.readline().decode("utf-8")
+
+
 def retry_mode(args):
-    """Re-process documents with errors in-place."""
+    """Re-process documents with errors in-place.
+
+    Streams through the output file to find errors, builds a byte-offset
+    index for the input file so we can retrieve specific lines without
+    loading everything into memory.
+    """
     print(f"Retry mode: scanning {args.output} for failed docs...")
 
+    # First pass: find which output indices have errors
+    error_indices = []
+    total_output = 0
     with open(args.output) as f:
-        output_rows = [json.loads(line) for line in f]
-
-    with open(args.input) as f:
-        input_rows = [json.loads(line) for line in f]
-
-    # FIX #12 (new): Guard against mismatched input/output lengths
-    if len(output_rows) > len(input_rows):
-        print(
-            f"  WARNING: output ({len(output_rows)} rows) has more rows than "
-            f"input ({len(input_rows)} rows). Skipping indices beyond input.",
-            file=sys.stderr,
-        )
-
-    error_indices = [
-        i
-        for i, row in enumerate(output_rows)
-        if i < len(input_rows) and doc_has_errors(row)
-    ]
+        for i, line in enumerate(f):
+            row = json.loads(line)
+            if doc_has_errors(row):
+                error_indices.append(i)
+            total_output += 1
 
     if not error_indices:
         print("No errors found. Nothing to retry.")
         return
 
+    # Build byte-offset index for the input file (lightweight: ~8 bytes/line)
+    print(f"Building offset index for {args.input}...")
+    input_offsets = _build_offset_index(args.input)
+    total_input = len(input_offsets)
+
+    # Guard against mismatched lengths
+    valid_errors = [i for i in error_indices if i < total_input]
+    if len(valid_errors) < len(error_indices):
+        skipped = len(error_indices) - len(valid_errors)
+        print(
+            f"  WARNING: skipping {skipped} error indices beyond input "
+            f"({total_input} lines). Output has {total_output} lines.",
+            file=sys.stderr,
+        )
+        error_indices = valid_errors
+
+    if not error_indices:
+        print("No retryable errors found after filtering.")
+        return
+
     print(f"Found {len(error_indices)} docs with errors. Retrying...")
 
+    # Build byte-offset index for the output file too — we need to
+    # rewrite it, but we do it in a streaming fashion:
+    # 1. Copy output to a temp file
+    # 2. Stream through temp, replacing error rows
+    output_offsets = _build_offset_index(args.output)
+
+    # Process error docs and collect replacements
+    replacements = {}  # idx -> new JSON string
     t_start = time.time()
+
     for count, idx in enumerate(error_indices):
         doc_start = time.time()
-        # FIX #2: Merge into the existing output row instead of replacing it
-        row = dict(output_rows[idx])  # start from existing output
-        input_row = input_rows[idx]
 
-        # Use markdown from input (source of truth for content)
+        # Read the specific input line
+        input_line = _read_line_by_offset(args.input, input_offsets[idx])
+        input_row = json.loads(input_line)
         url = input_row.get("u", "")
+
+        # Read existing output row to preserve any extra keys
+        output_line = _read_line_by_offset(args.output, output_offsets[idx])
+        row = json.loads(output_line)
 
         try:
             main_ann = classify_section(
@@ -602,9 +655,7 @@ def retry_mode(args):
             )
         except Exception as e:
             print(f"  FAILED main: {e}", file=sys.stderr)
-            main_ann = (
-                output_rows[idx].get("llm_register_annotation", {}).get("main", [])
-            )
+            main_ann = row.get("llm_register_annotation", {}).get("main", [])
 
         try:
             comments_ann = classify_section(
@@ -616,15 +667,13 @@ def retry_mode(args):
             )
         except Exception as e:
             print(f"  FAILED comments: {e}", file=sys.stderr)
-            comments_ann = (
-                output_rows[idx].get("llm_register_annotation", {}).get("comments", [])
-            )
+            comments_ann = row.get("llm_register_annotation", {}).get("comments", [])
 
         row["llm_register_annotation"] = {
             "main": main_ann,
             "comments": comments_ann,
         }
-        output_rows[idx] = row
+        replacements[idx] = json.dumps(row, ensure_ascii=False)
 
         doc_time = time.time() - doc_start
         done = count + 1
@@ -636,16 +685,55 @@ def retry_mode(args):
             f"ETA {remaining / 60:.0f}min | {url[:60]}"
         )
 
-    with open(args.output, "w") as f:
-        for row in output_rows:
-            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+    # Rewrite the output file, streaming line by line
+    tmp_output = args.output + ".tmp"
+    with open(args.output) as fin, open(tmp_output, "w") as fout:
+        for i, line in enumerate(fin):
+            if i in replacements:
+                fout.write(replacements[i] + "\n")
+            else:
+                fout.write(line)
 
+    os.replace(tmp_output, args.output)
     print(f"Done. Retried {len(error_indices)} docs.")
 
 
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+
+
+def _count_lines(path):
+    """Count lines in a file without loading it into memory."""
+    count = 0
+    with open(path, "rb") as f:
+        for _ in f:
+            count += 1
+    return count
+
+
+def _read_line_at_index(path, target_idx):
+    """Read a single line from a JSONL file by index (0-based).
+
+    Iterates without loading the whole file. For the forward pass this is
+    called once per doc so the overhead is acceptable — each call skips at
+    most `target_idx` newlines, which is fast on buffered I/O.
+    """
+    with open(path) as f:
+        for i, line in enumerate(f):
+            if i == target_idx:
+                return line
+    raise IndexError(f"Line {target_idx} not found in {path}")
+
+
+def _iter_lines(path, start, end):
+    """Yield (index, line_string) for lines [start, end) without loading all."""
+    with open(path) as f:
+        for i, line in enumerate(f):
+            if i >= end:
+                break
+            if i >= start:
+                yield i, line
 
 
 def main():
@@ -673,15 +761,14 @@ def main():
         retry_mode(args)
         return
 
-    with open(args.input) as f:
-        input_lines = f.readlines()
-
-    total = len(input_lines)
+    # Count lines without loading file into memory
+    print(f"Counting lines in {args.input}...", file=sys.stderr)
+    total = _count_lines(args.input)
+    print(f"Total docs: {total}")
 
     start = args.start_from
     if os.path.exists(args.output) and start == 0:
-        with open(args.output) as f:
-            existing = sum(1 for _ in f)
+        existing = _count_lines(args.output)
         if existing > 0:
             start = existing
             print(f"Resuming: {existing} docs already in {args.output}")
@@ -697,9 +784,9 @@ def main():
     t_start = time.time()
 
     with open(args.output, "a") as fout:
-        for idx in range(start, end):
+        for idx, raw_line in _iter_lines(args.input, start, end):
             doc_start = time.time()
-            row = json.loads(input_lines[idx])
+            row = json.loads(raw_line)
             url = row.get("u", "")
 
             try:
@@ -740,7 +827,6 @@ def main():
             avg = elapsed / done
             remaining = (end - start - done) * avg
             eta_min = remaining / 60
-            # FIX #1: Use `start` not `args.start_from` for correct denominator
             print(
                 f"[{idx}] {doc_time:.1f}s | {done}/{end - start} | "
                 f"avg {avg:.1f}s/doc | ETA {eta_min:.0f}min | {url[:60]}"
