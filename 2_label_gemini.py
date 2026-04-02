@@ -343,6 +343,28 @@ def build_user_prompt(url, section, lines, chunk_start, chunk_end, doc_preamble=
     return "\n".join(parts)
 
 
+def _extract_text(response):
+    """Extract only non-thought text parts from a Gemini response.
+
+    response.text can include thinking content on Gemini 3 models.
+    We iterate over parts and skip anything flagged as thought.
+    """
+    parts = []
+    for candidate in response.candidates:
+        for part in candidate.content.parts:
+            if not part.text:
+                continue
+            if getattr(part, "thought", False):
+                continue  # skip thinking content
+            parts.append(part.text)
+    if not parts:
+        raise ValueError(
+            f"No non-thought text in response "
+            f"(finish_reason={getattr(response.candidates[0], 'finish_reason', 'unknown')})"
+        )
+    return "".join(parts)
+
+
 def call_llm(model, user_prompt, verbose=False):
     """Call Gemini API with retries."""
     if verbose:
@@ -363,15 +385,15 @@ def call_llm(model, user_prompt, verbose=False):
                     system_instruction=SYSTEM_PROMPT,
                     temperature=0,
                     max_output_tokens=4096,
+                    # Gemini 3 models cannot fully disable thinking, but
+                    # MINIMAL constrains it to near-zero tokens and keeps
+                    # thinking out of the main response text.
+                    thinking_config=types.ThinkingConfig(
+                        thinking_level="MINIMAL",
+                    ),
                 ),
             )
-            # FIX #9 (new): Handle empty/blocked responses
-            if response.text is None:
-                raise ValueError(
-                    f"Empty response from API "
-                    f"(finish_reason={getattr(response, 'finish_reason', 'unknown')})"
-                )
-            return response.text
+            return _extract_text(response)
         except Exception as e:
             wait = RETRY_BACKOFF * (2**attempt)
             print(
