@@ -290,9 +290,9 @@ def main():
         return doc
 
     def find_next_doc_with_matches(start, direction=1):
-        idx = start
-        for _ in range(total_docs):
-            idx = (idx + direction) % total_docs
+        """Find the first doc at or after `start` (in `direction`) with matches."""
+        for i in range(total_docs):
+            idx = (start + i * direction) % total_docs
             doc = read_doc(args.input, offsets[idx])
             md = doc.get(f"markdown_{section}", "")
             lines = parse_lines(md)
@@ -301,8 +301,6 @@ def main():
             matching = get_matching_indices(lines, anns, filter_value)
             if matching:
                 return idx
-            if idx == start:
-                break
         return None
 
     if random_mode:
