@@ -31,8 +31,24 @@ CONTEXT_LINES = 8  # surrounding lines shown as context
 MAX_LINE_CHARS = 750  # truncate long lines
 MAX_RETRIES = 3
 RETRY_BACKOFF = 2  # seconds, doubles each retry
-SLEEP_BETWEEN_CALLS = 0.01
+SLEEP_BETWEEN_CALLS = 0.5  # FIX #7: meaningful rate-limit pause
 DOC_PREAMBLE_LINES = 8  # opening lines sent as document-level context
+
+# ---------------------------------------------------------------------------
+# Valid values for annotation validation (FIX #6)
+# ---------------------------------------------------------------------------
+VALID_MODE_MEDIUM = {"written", "transcribed", "cannot_rate"}
+VALID_MODE_TURN = {"monologic", "dialogic", None}
+VALID_FIELD_ACTIVITY = {
+    "recounting",
+    "explaining",
+    "directing",
+    "evaluating",
+    "promoting",
+    "creating",
+    None,
+}
+VALID_TENOR_FORMALITY = {"formal", "informal", None}
 
 # ---------------------------------------------------------------------------
 # Gemini client (reads GEMINI_API_KEY env var automatically)
@@ -43,10 +59,11 @@ gemini_client = genai.Client()
 # System prompt
 # ---------------------------------------------------------------------------
 SYSTEM_PROMPT = """\
-You classify text segments from web documents into register categories.
-
+You classify text segments from web documents along four register dimensions \
+based on Systemic Functional Linguistics.
+ 
 # Line format conventions
-
+ 
 Each line is numbered like [1], [2], etc. Lines use simplified markdown:
 - `# text` = heading
 - Plain text = paragraph
@@ -54,170 +71,183 @@ Each line is numbered like [1], [2], etc. Lines use simplified markdown:
 - `- item1; item2; item3` = list items joined by semicolons
 - `TABLE: ...` = table data
 - `CODE: ...` = code snippet
-
+ 
 Use headings, tables, code, and surrounding lines to understand the document's \
-overall purpose, but classify every line in the [CLASSIFY THESE LINES] section.
-
-# Categories
-
-For each line, assign three fields:
-
-## source (always required)
-- "written" — originally composed as written text. This is the default for \
-most web content. Informal or ungrammatical writing is still "written" — poor \
-grammar does not mean speech.
-- "transcribed" — text that was originally spoken aloud and then written down. \
-Use ONLY when there is clear evidence of oral origin: explicit transcript \
-labels, speaker turn markers (e.g. "Interviewer:", "Q:", "[Speaker]"), or the \
-text is clearly a transcript of a speech, podcast, interview, or hearing. Do \
-NOT use just because the writing is informal, conversational, or ungrammatical. \
-A letter or written document that is quoted or embedded in a page is "written" \
-even if introduced with "here is the full text."
-- "cannot_rate" — use for: (1) machine-generated, boilerplate, navigational, \
-or structural content with no substantive human-authored message (e.g. cookie \
-notices, auto-generated footers, breadcrumb navigation, "Related posts" lists, \
-copyright lines, "Share on Facebook", short bylines/datelines, section labels \
-like "7 Parts:", calls to edit/contribute like "Click EDIT to write this \
-answer", and metadata). Note: an author bio with full sentences describing \
-qualifications is substantive — classify it by its function, not as cannot_rate. \
-(2) Incoherent, garbled, or spam-like text that lacks coherent human intent, \
-including bad machine translations and keyword stuffing. \
-(3) Fragments too short to classify — isolated numbers, single words. \
-A complete sentence with clear communicative intent is always classifiable \
-as written or transcribed, not cannot_rate.
-
-## interactive (required if source is "written" or "transcribed"; null otherwise)
-- true — the text is produced in a participatory context where responses from \
-other participants are expected or possible. This includes: forum threads, \
-comment sections, discussion boards, social media posts with replies, chat \
-messages, and interviews with alternating speakers. A single comment or reply \
-is interactive even without visible back-and-forth, because it is produced \
-within a discussion context.
-- false — monologic: one author/speaker addressing a general audience with no \
-participatory context. Articles, blog posts (the post itself, not comments), \
-encyclopedia entries, guides, stories.
-
-Important: editorially structured Q&A content is NOT interactive. This \
-includes FAQ pages, wiki-style Q&A, and how-to sites where questions and \
-answers are organized as reference content rather than real conversation \
-between participants.
-
-## function (required if written/transcribed; null otherwise)
-The key question: what communicative act is the author performing? \
-Classify by the DOMINANT purpose of the line. If a line serves multiple \
-functions (e.g. describes a feature while also promoting it), choose the \
-function that best captures the author's primary intent. Comments and forum \
-posts can serve any function — people in discussions also narrate events, \
-describe facts, ask questions, and give instructions.
-
-Decision priority: "describing" is the residual category — use it only when \
-no more specific function applies. When a line could plausibly be "describing" \
-or another function, ask: is the author's primary goal to inform neutrally, \
-or to do something more specific — sell, argue, recount events, instruct? \
-If the latter, prefer the more specific label.
-
-Valid values (no other values are permitted): "narrating", "describing", \
-"instructing", "opinion", "promoting", "lyrical".
-- "narrating" — recounting specific events or stories in temporal sequence. \
-Requires specific events that actually happened (or are presented as having \
-happened). This includes news reports of events, historical accounts, and \
-biographical passages that recount what someone did. Factual reference \
-material about a topic is NOT narration even if it mentions dates or \
-timelines. Hypothetical scenarios and descriptions of typical situations \
-are also NOT narration. \
-Decision test: does the text recount a sequence of specific events? \
-"The company was founded in 2005 and has grown to 500 employees" is \
-describing (general background). "In March 2005, the founders quit their \
-jobs, pooled $10,000, and launched from a garage" is narrating (specific \
-events in sequence).
-- "describing" — presenting factual information, concepts, states of affairs, \
-or general knowledge. This covers neutral reference material, encyclopedic \
-content, and explanatory or analytical writing. Minor framing or incidental \
-evaluative language does not disqualify a line from "describing" — the test \
-is whether the primary purpose is to inform the reader about facts rather \
-than to argue a position or express a judgment. However, if evaluative \
-language is prominent or the line's purpose shifts toward advocacy or \
-critique, prefer "opinion."
-- "instructing" — teaching the reader how to do something, or providing \
-direct answers to how-to or problem-solving questions. How-to guides, \
-tutorials, recipes, technical instructions, troubleshooting steps, and \
-Q&A content where the answer provides information or guidance in response \
-to a question. Recipe components such as ingredient lists, quantities, and \
-preparation notes are "instructing" — they are part of the instructional \
-act of telling the reader how to make something.
-- "opinion" — expressing subjective views, evaluations, arguments, \
-complaints, praise, or commentary where the evaluative stance is the \
-primary purpose of the line. Includes text that uses narrative framing \
-primarily to support an evaluative point (when an anecdote serves to \
-complain, critique, praise, or argue, the function is "opinion"). Also \
-includes short expressive utterances like "Thanks!", "Great post!", \
-"Agreed" — these express a stance or sentiment, not information. Signals \
-include: sustained value judgments, subjective adjectives ("essential", \
-"crucial", "best"), rhetorical questions, prescriptive statements \
-("you should", "it's a must"), and recommendations. If text argues what \
-should be done or advocates a position, it is "opinion" even if the \
-topic is factual.
-- "promoting" — selling, advertising, or marketing a product, service, \
-brand, or organization. This includes: explicit ads and calls to action; \
-business pages describing their own services or qualifications to attract \
-clients; SEO-style content stuffed with keywords for commercial purposes; \
-fundraising appeals and donation requests; text where the author represents \
-an organization and frames its offerings positively to potential customers. \
-"Promoting" does not require explicit "buy now" language — if the text's \
-purpose is to attract clients or donors, it is promoting. \
-Key test: consider WHO is writing and WHY. When an organization describes \
-its own services, qualifications, or offerings, the function is "promoting" \
-even if the surface text reads as neutral factual description. Example: a \
-law firm's page stating "Our team has 20 years of experience in immigration \
-law. We handle H-1B visas, green cards, and asylum cases" is promoting — \
-the author represents the firm and frames its qualifications to attract \
-clients.
-- "lyrical" — poetry, song lyrics, verse, or artistic literary expression \
-presented as primary content. A poem or song quoted within a review or \
-critical essay should be classified by the outer framing purpose, not as \
-lyrical.
-
+overall purpose, but classify ONLY the lines in the [CLASSIFY THESE LINES] \
+section. Do NOT return JSON objects for lines marked [CONTEXT] or \
+[DOCUMENT OPENING].
+ 
+# Register dimensions
+ 
+For each line, assign four fields:
+ 
+## mode_medium (always required)
+- "written" — composed as written text. Default for web content.
+- "transcribed" — originally spoken, then written down. Use ONLY with clear \
+evidence of oral origin: transcript labels, speaker turn markers \
+(e.g. "Interviewer:", "Q:", "[Speaker]"), or text clearly from a speech, \
+podcast, interview, or hearing. Informal writing is still "written."
+- "cannot_rate" — use when the text is (1) machine-generated, boilerplate, \
+navigational, or structural content (e.g. cookie notices, footers, breadcrumbs, \
+copyright lines, share buttons, metadata), or (2) not a complete sentence or \
+coherent phrase. A sentence split across multiple lines should be classified \
+by its full meaning, not marked cannot_rate for being a fragment. Any complete \
+sentence or coherent phrase with human communicative intent is classifiable.
+ 
+## mode_turn (required if rateable; null if cannot_rate)
+- "monologic" — one author/speaker addressing a general audience: articles, \
+blog posts, encyclopedia entries, guides, stories. Editorially structured Q&A \
+(FAQ pages, wiki-style Q&A, how-to sites) is monologic — it is reference \
+content, not real conversation.
+- "dialogic" — produced in a participatory context where responses from other \
+participants are expected or possible: forum threads, comment sections, \
+social media posts, chat messages, interviews with alternating speakers.
+ 
+## field_activity (required if rateable; null if cannot_rate)
+The communicative activity the language is performing. Classify by the DOMINANT \
+activity. "explaining" is the residual category — use it only when no more \
+specific activity applies.
+ 
+- "recounting" — reporting specific events in temporal sequence. Requires \
+events presented as having happened. \
+Example: "The company was founded in 2005 and has grown to 500 employees" \
+→ explaining. "In March 2005, the founders quit their jobs, pooled $10,000, \
+and launched from a garage" → recounting.
+- "explaining" — presenting factual information, concepts, states of affairs, \
+or general knowledge. Neutral reference material, encyclopedic content, \
+analytical writing.
+- "directing" — telling the reader how to do something: tutorials, recipes, \
+technical instructions, troubleshooting steps, Q&A answers that provide \
+guidance. Recipe components (ingredient lists, quantities) are "directing."
+- "evaluating" — expressing subjective views, arguments, complaints, praise, \
+or commentary where stance is the primary purpose. Includes short expressive \
+utterances ("Thanks!", "Great post!"). If text argues what should be done or \
+advocates a position, it is "evaluating" even if the topic is factual.
+- "promoting" — selling, advertising, or marketing a product, service, brand, \
+or organization. Key test: WHO is writing and WHY. When an organization \
+describes its own services or offerings, the activity is "promoting" even if \
+the surface text reads as neutral. Includes fundraising appeals.
+- "creating" — poetry, song lyrics, verse, or artistic literary expression \
+presented as primary content.
+ 
+## tenor_formality (required if rateable; null if cannot_rate)
+- "formal" — institutional, professional, or academic register. Signals: \
+complex syntax, technical/specialized vocabulary, impersonal constructions, \
+no contractions or colloquialisms.
+- "informal" — casual, conversational, or personal register. Signals: \
+contractions, colloquialisms, first-person address, simple syntax, slang.
+ 
+When signals are mixed, choose the dominant register of the line.
+ 
 # Boundary examples
-
-These illustrate common difficult cases. The reasoning after // is for your \
-reference — do not include it in output.
-
-Promoting vs describing:
+ 
+Promoting vs explaining:
   "We offer comprehensive dental care including cleanings, implants, and \
-cosmetic dentistry." → promoting // author represents the business, framing \
-services to attract patients
+cosmetic dentistry." → promoting // author represents the business
   "Dental care includes preventive treatments such as cleanings, as well as \
-restorative procedures like implants." → describing // neutral encyclopedia-style \
-explanation, no organizational self-representation
-
-Narrating vs describing:
+restorative procedures like implants." → explaining // neutral explanation
+ 
+Recounting vs explaining:
   "On June 12, protesters gathered outside city hall and clashed with police \
-after an officer fired tear gas into the crowd." → narrating // specific events \
-in temporal sequence
+after an officer fired tear gas into the crowd." → recounting
   "The city has a history of political protests, particularly around police \
-reform issues." → describing // general background, no specific event sequence
-
-Opinion vs describing:
-  "The framework provides dependency injection and supports middleware." \
-→ describing // neutral factual statement about capabilities
-  "The framework's dependency injection is excellent and makes it the best \
-choice for enterprise applications." → opinion // evaluative stance is primary
-
+reform issues." → explaining
+ 
 # Output format
-
+ 
 Return ONLY a JSON array with one object per line in [CLASSIFY THESE LINES]. \
 Each classified line gets exactly one JSON object. No markdown fences, \
 no commentary, no extra text.
-
+ 
 Example:
-[{"line":1,"source":"written","interactive":false,"function":"describing"},\
-{"line":2,"source":"cannot_rate","interactive":null,"function":null}]
+[{"line":1,"mode_medium":"written","mode_turn":"monologic","field_activity":"explaining","tenor_formality":"formal"},\
+{"line":2,"mode_medium":"cannot_rate","mode_turn":null,"field_activity":null,"tenor_formality":null}]
 """
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+# Fallback annotation for unrateable lines
+def _cannot_rate(line_num):
+    return {
+        "line": line_num,
+        "mode_medium": "cannot_rate",
+        "mode_turn": None,
+        "field_activity": None,
+        "tenor_formality": None,
+    }
+
+
+def _structural(line_num):
+    return {
+        "line": line_num,
+        "mode_medium": "cannot_rate",  # FIX #4: use valid schema value
+        "mode_turn": None,
+        "field_activity": None,
+        "tenor_formality": None,
+        "is_structural": True,  # preserve the distinction as a flag
+    }
+
+
+def validate_annotation(ann):
+    """FIX #6: Validate and repair an annotation dict. Returns corrected copy."""
+    ann = dict(ann)  # shallow copy
+
+    # Validate mode_medium
+    if ann.get("mode_medium") not in VALID_MODE_MEDIUM:
+        print(
+            f"  Invalid mode_medium '{ann.get('mode_medium')}' on line {ann.get('line')}, "
+            f"defaulting to cannot_rate",
+            file=sys.stderr,
+        )
+        ann["mode_medium"] = "cannot_rate"
+
+    # If cannot_rate, force nulls on dependent fields
+    if ann["mode_medium"] == "cannot_rate":
+        ann["mode_turn"] = None
+        ann["field_activity"] = None
+        ann["tenor_formality"] = None
+        return ann
+
+    # Validate mode_turn
+    if ann.get("mode_turn") not in VALID_MODE_TURN:
+        print(
+            f"  Invalid mode_turn '{ann.get('mode_turn')}' on line {ann.get('line')}, "
+            f"defaulting to monologic",
+            file=sys.stderr,
+        )
+        ann["mode_turn"] = "monologic"
+
+    # Validate field_activity
+    if ann.get("field_activity") not in VALID_FIELD_ACTIVITY:
+        print(
+            f"  Invalid field_activity '{ann.get('field_activity')}' on line {ann.get('line')}, "
+            f"defaulting to explaining",
+            file=sys.stderr,
+        )
+        ann["field_activity"] = "explaining"
+
+    # Validate tenor_formality
+    if ann.get("tenor_formality") not in VALID_TENOR_FORMALITY:
+        print(
+            f"  Invalid tenor_formality '{ann.get('tenor_formality')}' on line {ann.get('line')}, "
+            f"defaulting to formal",
+            file=sys.stderr,
+        )
+        ann["tenor_formality"] = "formal"
+
+    # Rateable lines should not have null dependent fields
+    if ann.get("mode_turn") is None:
+        ann["mode_turn"] = "monologic"
+    if ann.get("field_activity") is None:
+        ann["field_activity"] = "explaining"
+    if ann.get("tenor_formality") is None:
+        ann["tenor_formality"] = "formal"
+
+    return ann
 
 
 def parse_lines(markdown_text):
@@ -256,7 +286,12 @@ def get_doc_preamble(lines, max_lines=DOC_PREAMBLE_LINES):
 
 
 def build_user_prompt(url, section, lines, chunk_start, chunk_end, doc_preamble=""):
-    """Build user message for one chunk."""
+    """Build user message for one chunk.
+
+    FIX #8 (new): Structural lines inside the classify range are sent as
+    context-only (outside the CLASSIFY block) so the LLM doesn't waste
+    tokens classifying them, but still sees them for context.
+    """
     parts = []
     parts.append(f"URL: {url}")
     parts.append(f"Section: {section}")
@@ -283,10 +318,19 @@ def build_user_prompt(url, section, lines, chunk_start, chunk_end, doc_preamble=
         for i in range(ctx_start, chunk_start):
             parts.append(f"[{lines[i]['num']}] {truncate(lines[i]['text'])}")
 
+    # FIX #8: Split classify range into classifiable lines and inline
+    # structural lines shown as context
     parts.append("")
     parts.append("[CLASSIFY THESE LINES]")
     for i in range(chunk_start, chunk_end):
-        parts.append(f"[{lines[i]['num']}] {truncate(lines[i]['text'])}")
+        if is_structural(lines[i]["text"]):
+            # Show structural lines for context but mark them
+            parts.append(
+                f"[{lines[i]['num']}] {truncate(lines[i]['text'])}  "
+                f"{{structural — do not classify}}"
+            )
+        else:
+            parts.append(f"[{lines[i]['num']}] {truncate(lines[i]['text'])}")
 
     ctx_end = min(len(lines), chunk_end + CONTEXT_LINES)
     if chunk_end < ctx_end:
@@ -320,6 +364,12 @@ def call_llm(model, user_prompt, verbose=False):
                     max_output_tokens=4096,
                 ),
             )
+            # FIX #9 (new): Handle empty/blocked responses
+            if response.text is None:
+                raise ValueError(
+                    f"Empty response from API "
+                    f"(finish_reason={getattr(response, 'finish_reason', 'unknown')})"
+                )
             return response.text
         except Exception as e:
             wait = RETRY_BACKOFF * (2**attempt)
@@ -344,14 +394,28 @@ def parse_json_response(text):
     # Some models wrap output in <think>...</think> tags; strip those
     text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
 
+    # FIX #10 (new): Find the outermost JSON array even if surrounded by text
+    bracket_start = text.find("[")
+    if bracket_start == -1:
+        raise json.JSONDecodeError("No JSON array found in response", text, 0)
+
+    # Try parsing from the first '[' to avoid preamble text
+    candidate = text[bracket_start:]
+
+    try:
+        return json.loads(candidate)
+    except json.JSONDecodeError:
+        pass
+
+    # Original truncation recovery
     try:
         return json.loads(text)
     except json.JSONDecodeError:
         pass
 
-    last_brace = text.rfind("}")
+    last_brace = candidate.rfind("}")
     if last_brace > 0:
-        truncated = text[: last_brace + 1]
+        truncated = candidate[: last_brace + 1]
         if not truncated.rstrip().endswith("]"):
             truncated = truncated + "]"
         try:
@@ -380,6 +444,19 @@ def classify_section(model, url, section, markdown_text, verbose=False):
 
     for chunk_start in range(0, len(lines), CHUNK_SIZE):
         chunk_end = min(chunk_start + CHUNK_SIZE, len(lines))
+
+        # FIX #11 (new): Skip chunks that are entirely structural
+        classifiable = [
+            i
+            for i in range(chunk_start, chunk_end)
+            if not is_structural(lines[i]["text"])
+        ]
+        if not classifiable:
+            # All lines in this chunk are structural; tag them locally
+            for i in range(chunk_start, chunk_end):
+                ann_by_line[lines[i]["num"]] = _structural(lines[i]["num"])
+            continue
+
         prompt = build_user_prompt(
             url, section, lines, chunk_start, chunk_end, doc_preamble
         )
@@ -392,16 +469,19 @@ def classify_section(model, url, section, markdown_text, verbose=False):
             print(f"  JSON parse error: {e}", file=sys.stderr)
             print(f"  Raw: {raw[:300]}", file=sys.stderr)
             result = [
-                {
-                    "line": lines[i]["num"],
-                    "source": "cannot_rate",
-                    "interactive": None,
-                    "function": None,
-                }
-                for i in range(chunk_start, chunk_end)
+                _cannot_rate(lines[i]["num"]) for i in range(chunk_start, chunk_end)
             ]
 
-        expected = {lines[i]["num"] for i in range(chunk_start, chunk_end)}
+        # FIX #3: Store original results FIRST, so retries can overwrite
+        for ann in result:
+            ann_by_line[ann.get("line")] = ann
+
+        # Only check non-structural lines for missing annotations
+        expected = {
+            lines[i]["num"]
+            for i in range(chunk_start, chunk_end)
+            if not is_structural(lines[i]["text"])
+        }
         returned = {a.get("line") for a in result}
         missing = expected - returned
         if missing:
@@ -420,6 +500,7 @@ def classify_section(model, url, section, markdown_text, verbose=False):
             try:
                 retry_raw = call_llm(model, retry_prompt, verbose=verbose)
                 retry_result = parse_json_response(retry_raw)
+                # FIX #3: Retry results overwrite originals (applied AFTER)
                 for ann in retry_result:
                     ann_by_line[ann.get("line")] = ann
                 still_missing = missing - {a.get("line") for a in retry_result}
@@ -432,38 +513,23 @@ def classify_section(model, url, section, markdown_text, verbose=False):
                 print(f"  Retry failed: {e}", file=sys.stderr)
             time.sleep(SLEEP_BETWEEN_CALLS)
 
-        for ann in result:
-            ann_by_line[ann.get("line")] = ann
-
         time.sleep(SLEEP_BETWEEN_CALLS)
 
     # Build final list with post-processing
     final = []
     for line in lines:
         if is_structural(line["text"]):
-            final.append(
-                {
-                    "line": line["num"],
-                    "source": "structural",
-                    "interactive": None,
-                    "function": None,
-                }
-            )
+            final.append(_structural(line["num"]))
         elif line["num"] in ann_by_line:
             ann = ann_by_line[line["num"]]
             # Comments are never transcribed — force to written
-            if section == "comments" and ann.get("source") == "transcribed":
-                ann["source"] = "written"
+            if section == "comments" and ann.get("mode_medium") == "transcribed":
+                ann["mode_medium"] = "written"
+            # FIX #6: Validate annotation
+            ann = validate_annotation(ann)
             final.append(ann)
         else:
-            final.append(
-                {
-                    "line": line["num"],
-                    "source": "cannot_rate",
-                    "interactive": None,
-                    "function": None,
-                }
-            )
+            final.append(_cannot_rate(line["num"]))
 
     return final
 
@@ -496,7 +562,19 @@ def retry_mode(args):
     with open(args.input) as f:
         input_rows = [json.loads(line) for line in f]
 
-    error_indices = [i for i, row in enumerate(output_rows) if doc_has_errors(row)]
+    # FIX #12 (new): Guard against mismatched input/output lengths
+    if len(output_rows) > len(input_rows):
+        print(
+            f"  WARNING: output ({len(output_rows)} rows) has more rows than "
+            f"input ({len(input_rows)} rows). Skipping indices beyond input.",
+            file=sys.stderr,
+        )
+
+    error_indices = [
+        i
+        for i, row in enumerate(output_rows)
+        if i < len(input_rows) and doc_has_errors(row)
+    ]
 
     if not error_indices:
         print("No errors found. Nothing to retry.")
@@ -507,15 +585,19 @@ def retry_mode(args):
     t_start = time.time()
     for count, idx in enumerate(error_indices):
         doc_start = time.time()
-        row = input_rows[idx]
-        url = row.get("u", "")
+        # FIX #2: Merge into the existing output row instead of replacing it
+        row = dict(output_rows[idx])  # start from existing output
+        input_row = input_rows[idx]
+
+        # Use markdown from input (source of truth for content)
+        url = input_row.get("u", "")
 
         try:
             main_ann = classify_section(
                 args.model,
                 url,
                 "main",
-                row.get("markdown_main", ""),
+                input_row.get("markdown_main", ""),
                 verbose=args.verbose_prompts,
             )
         except Exception as e:
@@ -529,7 +611,7 @@ def retry_mode(args):
                 args.model,
                 url,
                 "comments",
-                row.get("markdown_comments", ""),
+                input_row.get("markdown_comments", ""),
                 verbose=args.verbose_prompts,
             )
         except Exception as e:
@@ -658,8 +740,9 @@ def main():
             avg = elapsed / done
             remaining = (end - start - done) * avg
             eta_min = remaining / 60
+            # FIX #1: Use `start` not `args.start_from` for correct denominator
             print(
-                f"[{idx}] {doc_time:.1f}s | {done}/{end - args.start_from} | "
+                f"[{idx}] {doc_time:.1f}s | {done}/{end - start} | "
                 f"avg {avg:.1f}s/doc | ETA {eta_min:.0f}min | {url[:60]}"
             )
 
