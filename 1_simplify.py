@@ -1,4 +1,5 @@
 import json
+import os
 import re
 import sys
 from html import escape
@@ -276,8 +277,8 @@ def process_jsonl(input_path: str, output_path: str):
                     simplified
                 )
 
-                # Skip rows where any enriched field is empty
-                if not simplified or not md_main or not md_comments:
+                # Skip rows where core fields are empty (comments are optional)
+                if not simplified or not md_main:
                     skipped += 1
                     continue
 
