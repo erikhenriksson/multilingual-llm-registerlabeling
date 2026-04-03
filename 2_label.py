@@ -26,8 +26,8 @@ from google.genai import types
 # Defaults
 # ---------------------------------------------------------------------------
 DEFAULT_MODEL = "gemini-3-flash-preview"
-CHUNK_SIZE = 20  # lines per API call
-CONTEXT_LINES = 8  # surrounding lines shown as context
+CHUNK_SIZE = 10  # lines per API call
+CONTEXT_LINES = 10  # surrounding lines shown as context
 MAX_LINE_CHARS = 750  # truncate long lines
 MAX_RETRIES = 3
 RETRY_BACKOFF = 2  # seconds, doubles each retry
@@ -142,15 +142,17 @@ text when presented as primary content (e.g. Bible verses, Quranic ayat, \
 hymns).
  
 ## tenor_formality (required if rateable; null if cannot_rate)
-- "formal" — institutional, professional, or academic register, and the \
-default for most published web content. Signals include complex syntax, \
-technical/specialized vocabulary, and impersonal constructions, but text need \
-not exhibit all of these to be formal.
-- "informal" — casual, conversational, or personal register. Requires positive \
-evidence of casual tone: slang, colloquialisms, emoji, non-standard \
-capitalization or punctuation, casual discourse markers , or an overall conversational tone. Contractions, exclamation marks, \
-first-person pronouns, direct address, or emotional intensity do not by \
-themselves signal informality.
+- "formal" — institutional, professional, academic, or published register.
+This is the DEFAULT for all web content. Classify as formal unless there
+is strong counter-evidence. When in doubt, choose formal.
+- "informal" — casual, conversational, or personal register. Requires
+MULTIPLE co-occurring signals such as: slang or colloquial vocabulary,
+emoji or emoticons, non-standard spelling or capitalization, profanity,
+or internet-specific discourse patterns. Common grammatical features of
+the language, first-person pronouns, direct address, rhetorical
+questions, emotional intensity, personal anecdotes, and discourse
+connectors are NOT informality signals. A single borderline feature is
+never sufficient.
  
 When signals are mixed, choose the dominant register of the line.
  
