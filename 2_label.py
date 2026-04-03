@@ -28,7 +28,7 @@ from google.genai import types
 DEFAULT_MODEL = "gemini-3-flash-preview"
 CHUNK_SIZE = 10  # lines per API call
 CONTEXT_LINES = 10  # surrounding lines shown as context
-MAX_LINE_CHARS = 750  # truncate long lines
+MAX_LINE_CHARS = 500  # truncate long lines
 MAX_RETRIES = 3
 RETRY_BACKOFF = 2  # seconds, doubles each retry
 SLEEP_BETWEEN_CALLS = 0.5  # FIX #7: meaningful rate-limit pause
