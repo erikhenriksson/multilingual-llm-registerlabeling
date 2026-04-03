@@ -26,13 +26,13 @@ from google.genai import types
 # Defaults
 # ---------------------------------------------------------------------------
 DEFAULT_MODEL = "gemini-3-flash-preview"
-CHUNK_SIZE = 10  # lines per API call
+CHUNK_SIZE = 15  # lines per API call
 CONTEXT_LINES = 10  # surrounding lines shown as context
 MAX_LINE_CHARS = 500  # truncate long lines
 MAX_RETRIES = 3
 RETRY_BACKOFF = 2  # seconds, doubles each retry
 SLEEP_BETWEEN_CALLS = 0.5  # FIX #7: meaningful rate-limit pause
-DOC_PREAMBLE_LINES = 8  # opening lines sent as document-level context
+DOC_PREAMBLE_LINES = 5  # opening lines sent as document-level context
 
 # ---------------------------------------------------------------------------
 # Valid values for annotation validation (FIX #6)
@@ -109,9 +109,13 @@ social media posts, chat messages, interviews with alternating speakers.
  
 ## field_activity (required if rateable; null if cannot_rate)
 The communicative activity the language is performing. Classify by the DOMINANT \
-activity. "explaining" is the residual category — use it only when no more \
-specific activity applies.
+activity.
  
+- "explaining" — presenting factual information, concepts, states of affairs, \
+or general knowledge. Neutral reference material, encyclopedic content, \
+analytical writing. This is the default for informational web content. Use a \
+more specific category below only when there is clear evidence that the line's \
+primary communicative purpose is something other than conveying information.
 - "recounting" — reporting specific events in temporal sequence. Requires \
 events presented as having happened, with narrative presentation — not just \
 the presence of a date or an event-denoting verb. A reference-style mention \
@@ -119,9 +123,6 @@ of an event (e.g. a citation or catalog entry) is explaining, not recounting. \
 Example: "The company was founded in 2005 and has grown to 500 employees" \
 → explaining. "In March 2005, the founders quit their jobs, pooled $10,000, \
 and launched from a garage" → recounting.
-- "explaining" — presenting factual information, concepts, states of affairs, \
-or general knowledge. Neutral reference material, encyclopedic content, \
-analytical writing.
 - "directing" — telling the reader how to do something: tutorials, recipes, \
 technical instructions, troubleshooting steps, Q&A answers that provide \
 guidance. Recipe components (ingredient lists, quantities) are "directing."
@@ -141,19 +142,35 @@ presented as primary content. This includes religious scripture and liturgical \
 text when presented as primary content (e.g. Bible verses, Quranic ayat, \
 hymns).
  
-## tenor_formality (required if rateable; null if cannot_rate) \
-- "formal" — institutional, professional, academic, or published register.
-This is the default for most web content. \
+## tenor_formality (required if rateable; null if cannot_rate)
+- "formal" — institutional, professional, academic, or published register. \
+This is the default for most web content.
 - "informal" — casual, conversational, or personal register. Requires \
 MULTIPLE co-occurring signals such as: slang or colloquial vocabulary, \
 emoji or emoticons, non-standard spelling or capitalization, profanity, \
-or internet-specific discourse patterns. Common grammatical features of \
-the language, first-person pronouns, direct address, rhetorical \
-questions, emotional intensity, personal anecdotes, and discourse \
-connectors are NOT informality signals. A single borderline feature is \
-never sufficient. \
+internet-specific discourse patterns, stylistic fragmentation (deliberate \
+one-word or very short sentences used for emphasis or comedic timing), or \
+spoken-register markers like ellipsis-as-dramatic-pause. Common grammatical \
+features of the language, first-person pronouns, and discourse connectors \
+are NOT informality signals on their own. However, direct address, rhetorical \
+questions, and emotional intensity — while not sufficient by themselves — \
+should be counted as supporting evidence when they co-occur with signals from \
+the list above.
  
 When signals are mixed, choose the dominant register of the line.
+ 
+# Register consistency
+ 
+Lines within a coherent section of a document (e.g. a list of items, a \
+sequence of captions, consecutive paragraphs by the same author) typically \
+share the same register values. Do not assign a different field_activity or \
+tenor_formality to an individual line unless the shift is clearly motivated \
+by a change in communicative purpose — not merely by variation in surface \
+phrasing. A caption that happens to contain an imperative-like phrase in a \
+photo gallery is still the same activity as the surrounding captions. Reserve \
+register shifts for genuine transitions: article body to comment section, \
+instructions to editorial aside, author prose to embedded quotation from a \
+different source.
  
 # Using context
  
