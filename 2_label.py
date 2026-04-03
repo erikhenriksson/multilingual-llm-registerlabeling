@@ -143,10 +143,8 @@ text when presented as primary content (e.g. Bible verses, Quranic ayat, \
 hymns).
  
 ## tenor_formality (required if rateable; null if cannot_rate)
-- "formal" — the default for web content. The language would be appropriate \
-in professional or public communication between strangers.
-- "informal" — the language would be noticeably out of place in professional \
-or public communication between strangers.
+- "formal" — the default for web content.
+- "informal" — colloquial language.
  
 When signals are mixed, choose the dominant register of the line.
  
