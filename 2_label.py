@@ -143,8 +143,11 @@ text when presented as primary content (e.g. Bible verses, Quranic ayat, \
 hymns).
  
 ## tenor_formality (required if rateable; null if cannot_rate)
-- "formal" — the default for web content.
-- "informal" — colloquial language.
+- "formal" — the default for web content. The author maintains social \
+distance, addressing a general or institutional audience.
+- "informal" — the author reduces social distance, addressing the audience \
+as peers or in-group members. Marked by colloquial vocabulary, in-group \
+references, or a casual interpersonal stance.
  
 When signals are mixed, choose the dominant register of the line.
  
