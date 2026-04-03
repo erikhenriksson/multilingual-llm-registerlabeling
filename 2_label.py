@@ -142,17 +142,17 @@ text when presented as primary content (e.g. Bible verses, Quranic ayat, \
 hymns).
  
 ## tenor_formality (required if rateable; null if cannot_rate)
-- "formal" — institutional, professional, or academic register. Signals: \
-complex syntax, technical/specialized vocabulary, impersonal constructions, \
-no contractions or colloquialisms.
-- "informal" — casual, conversational, or personal register. Signals: \
-contractions, colloquialisms, first-person address, simple syntax, slang.
+- "formal" — institutional, professional, or academic register, and the \
+default for most published web content. Signals include complex syntax, \
+technical/specialized vocabulary, and impersonal constructions, but text need \
+not exhibit all of these to be formal.
+- "informal" — casual, conversational, or personal register. Requires positive \
+evidence of casual tone: slang, colloquialisms, emoji, non-standard \
+capitalization or punctuation, casual discourse markers , or an overall conversational tone. Contractions, exclamation marks, \
+first-person pronouns, direct address, or emotional intensity do not by \
+themselves signal informality.
  
-When signals are mixed, choose the dominant register of the line. \
-Do not over-index on isolated surface markers. A few contractions \
-or first-person pronouns do not make text informal if the overall register \
-is professional, instructional, or promotional. Reserve "informal" for text \
-where the overall tone is genuinely casual or conversational.
+When signals are mixed, choose the dominant register of the line.
  
 # Using context
  
