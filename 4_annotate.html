@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Register Annotation</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700&display=swap');
+
+  :root {
+    --bg: #0c0e13;
+    --surface: #14171e;
+    --surface2: #1a1e28;
+    --surface3: #212633;
+    --border: #2a3040;
+    --border-focus: #4a5568;
+    --text: #d8dce6;
+    --text-dim: #6b7280;
+    --text-faint: #454d5e;
+    --accent: #6ea1f7;
+    --accent-soft: rgba(110, 161, 247, 0.12);
+    --accent-med: rgba(110, 161, 247, 0.25);
+    --green: #5cb87a;
+    --green-soft: rgba(92, 184, 122, 0.12);
+    --red: #e5574f;
+    --red-soft: rgba(229, 87, 79, 0.10);
+    --amber: #d4a843;
+    --amber-soft: rgba(212, 168, 67, 0.15);
+    --amber-border: rgba(212, 168, 67, 0.45);
+    --purple: #a78bfa;
+    --cyan: #67d4e2;
+    --font: 'DM Sans', -apple-system, sans-serif;
+    --mono: 'DM Mono', 'Menlo', monospace;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: var(--font);
+    background: var(--bg);
+    color: var(--text);
+    font-size: 13px;
+    line-height: 1.55;
+    min-height: 100vh;
+  }
+
+  .wrap { max-width: 860px; margin: 0 auto; padding: 20px 24px; }
+
+  /* ─── Setup ─── */
+  .setup-screen {
+    max-width: 440px; margin: 80px auto;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 36px;
+  }
+  .setup-screen h1 {
+    font-size: 18px; font-weight: 700; margin-bottom: 6px; letter-spacing: -0.3px;
+  }
+  .setup-screen p.sub { font-size: 12px; color: var(--text-dim); margin-bottom: 24px; }
+  .field { margin-bottom: 16px; }
+  .field label { display: block; font-size: 11px; font-weight: 600; color: var(--text-dim); margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.4px; }
+  .field input[type="text"], .field input[type="file"] {
+    width: 100%; padding: 9px 12px; background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 6px; color: var(--text); font-family: var(--font); font-size: 13px;
+  }
+  .field input[type="text"]:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+  .field input[type="file"] { padding: 8px; font-size: 12px; cursor: pointer; }
+  .field .hint { font-size: 10px; color: var(--text-faint); margin-top: 4px; }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 7px 16px; border: 1px solid var(--border); border-radius: 6px;
+    background: var(--surface2); color: var(--text); font-family: var(--font);
+    font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.12s;
+    user-select: none;
+  }
+  .btn:hover { border-color: var(--border-focus); background: var(--surface3); }
+  .btn:active { transform: scale(0.97); }
+  .btn-accent { background: var(--accent); color: #0c0e13; border-color: var(--accent); }
+  .btn-accent:hover { opacity: 0.88; background: var(--accent); }
+  .btn-green { background: var(--green); color: #0c0e13; border-color: var(--green); }
+  .btn-green:hover { opacity: 0.88; background: var(--green); }
+
+  .err { color: var(--red); font-size: 11px; margin-top: 10px; min-height: 16px; }
+
+  /* ─── Header ─── */
+  .top-bar {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--border);
+  }
+  .top-bar h1 { font-size: 13px; font-weight: 700; letter-spacing: -0.2px; }
+  .top-meta { display: flex; gap: 14px; align-items: center; font-size: 11px; color: var(--text-dim); font-family: var(--mono); }
+  .stat-agree { color: var(--green); }
+  .stat-disagree { color: var(--red); }
+
+  .pbar { width: 100%; height: 3px; background: var(--surface2); border-radius: 2px; margin-bottom: 20px; overflow: hidden; }
+  .pbar-fill { height: 100%; background: var(--accent); transition: width 0.25s ease; border-radius: 2px; }
+
+  /* ─── Card ─── */
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    overflow: hidden;
+  }
+
+  .card-meta {
+    padding: 7px 16px; background: var(--surface2); border-bottom: 1px solid var(--border);
+    font: 500 10px/1.4 var(--mono); color: var(--text-dim);
+    display: flex; gap: 14px; flex-wrap: wrap;
+  }
+
+  .llm-row {
+    padding: 5px 16px; background: var(--amber-soft); border-bottom: 1px solid var(--border);
+    font: 500 10px/1.4 var(--mono); display: flex; gap: 7px; align-items: center; flex-wrap: wrap;
+  }
+  .llm-label { color: var(--amber); font-weight: 700; }
+  .llm-chip {
+    display: inline-block; padding: 1px 7px; border-radius: 3px;
+    border: 1px solid var(--amber-border); color: var(--amber); font-size: 10px;
+  }
+
+  /* ─── Lines ─── */
+  .lines { padding: 10px 16px; font: 400 11.5px/1.65 var(--mono); border-bottom: 1px solid var(--border); }
+  .ln { display: flex; gap: 10px; padding: 1px 4px; border-radius: 3px; }
+  .ln.ctx { color: var(--text-dim); }
+  .ln.tgt {
+    background: var(--accent-soft); color: var(--text); font-weight: 500;
+    border-left: 3px solid var(--accent); padding-left: 9px; margin: 5px 0;
+  }
+  .ln-num { color: var(--text-faint); min-width: 30px; text-align: right; flex-shrink: 0; user-select: none; }
+  .ln-txt { word-break: break-word; }
+  .sep { color: var(--text-faint); font-size: 10px; padding: 3px 0; opacity: 0.45; user-select: none; }
+
+  /* ─── Annotation groups ─── */
+  .ann-area { padding: 14px 16px 10px; }
+  .grp { margin-bottom: 12px; }
+  .grp:last-child { margin-bottom: 0; }
+  .grp-label {
+    font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px;
+    color: var(--text-dim); margin-bottom: 5px;
+  }
+  .grp-label .grp-focus { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); margin-left: 5px; vertical-align: middle; opacity: 0; transition: opacity 0.15s; }
+  .grp.active .grp-focus { opacity: 1; }
+  .grp.disabled { opacity: 0.22; pointer-events: none; }
+  .opts { display: flex; gap: 5px; flex-wrap: wrap; }
+
+  .opt {
+    padding: 4px 13px; border-radius: 5px; border: 1px solid var(--border);
+    background: var(--surface2); color: var(--text); font-family: var(--font);
+    font-size: 11.5px; cursor: pointer; transition: all 0.12s; position: relative;
+  }
+  .opt:hover { border-color: var(--border-focus); }
+  .opt.sel { background: var(--accent-med); border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .opt .key {
+    display: inline-block; font: 500 9px var(--mono); color: var(--text-faint);
+    border: 1px solid var(--border); border-radius: 2px; padding: 0 3px; margin-right: 4px;
+    vertical-align: middle;
+  }
+  .opt.sel .key { color: var(--accent); border-color: var(--accent); }
+  .opt.llm { box-shadow: inset 0 -2px 0 0 var(--amber); }
+
+  .kbd-hint {
+    padding: 5px 16px; font: 400 9px var(--mono); color: var(--text-faint);
+    text-align: center; border-top: 1px solid var(--border); background: var(--surface2);
+  }
+  kbd { display: inline-block; padding: 0 4px; border: 1px solid var(--border); border-radius: 3px; background: var(--surface3); font-family: var(--mono); font-size: 9px; }
+
+  /* ─── Nav ─── */
+  .nav {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-top: 14px; gap: 8px;
+  }
+  .nav-center { display: flex; gap: 6px; align-items: center; }
+  .counter { font: 500 11px var(--mono); color: var(--text-dim); }
+
+  /* ─── Guide ─── */
+  .guide { margin-top: 16px; display: none; }
+  .guide .card { font-size: 12px; line-height: 1.65; }
+  .guide-section { padding: 10px 16px; border-bottom: 1px solid var(--border); }
+  .guide-section:last-child { border-bottom: none; }
+  .guide-section h3 { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-dim); margin-bottom: 6px; }
+  .guide-section p { margin-bottom: 4px; }
+  .guide-section b { color: var(--accent); font-weight: 600; }
+
+  /* ─── Done ─── */
+  .done-screen { text-align: center; padding: 80px 20px; display: none; }
+  .done-screen h2 { font-size: 18px; margin-bottom: 8px; }
+  .done-screen p { color: var(--text-dim); margin-bottom: 20px; font-size: 13px; }
+
+  /* ─── Scrollbar ─── */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--surface3); border-radius: 3px; }
+</style>
+</head>
+<body>
+<div class="wrap" id="app">
+
+  <!-- ═══ SETUP ═══ -->
+  <div id="v-setup" class="setup-screen">
+    <h1>Register Annotation</h1>
+    <p class="sub">Classify web text segments along four register dimensions</p>
+    <div class="field">
+      <label>Annotator ID</label>
+      <input type="text" id="inp-name" placeholder="annotator_1">
+    </div>
+    <div class="field">
+      <label>Annotated JSONL file</label>
+      <input type="file" accept=".jsonl,.json" id="inp-file">
+      <div class="hint">Load your annotated JSONL output directly — tasks are extracted in-browser.</div>
+    </div>
+    <div style="margin-top:20px;">
+      <button class="btn btn-accent" onclick="doLoad()">Load &amp; Start</button>
+    </div>
+    <div class="err" id="load-err"></div>
+  </div>
+
+  <!-- ═══ ANNOTATION ═══ -->
+  <div id="v-ann" style="display:none">
+    <div class="top-bar">
+      <h1>Register Annotation</h1>
+      <div class="top-meta">
+        <span id="el-who"></span>
+        <span id="el-prog"></span>
+        <span id="el-agree"></span>
+      </div>
+    </div>
+    <div class="pbar"><div class="pbar-fill" id="el-pbar"></div></div>
+
+    <div class="card" id="el-card">
+      <div class="card-meta" id="el-meta"></div>
+      <div class="llm-row" id="el-llm"></div>
+      <div class="lines" id="el-lines"></div>
+      <div class="ann-area" id="el-ann"></div>
+      <div class="kbd-hint">
+        Number keys select &nbsp; <kbd>→</kbd> next &nbsp; <kbd>←</kbd> prev &nbsp; <kbd>Tab</kbd> next dimension &nbsp; <kbd>Shift+Tab</kbd> prev dimension
+      </div>
+    </div>
+
+    <div class="nav">
+      <button class="btn" onclick="go(-1)">← Prev</button>
+      <div class="nav-center">
+        <button class="btn" onclick="toggleGuide()">Guide</button>
+        <button class="btn btn-green" onclick="save()">Save ↓</button>
+      </div>
+      <span class="counter" id="el-counter"></span>
+      <button class="btn btn-accent" id="el-next" onclick="go(1)">Next →</button>
+    </div>
+
+    <div class="guide" id="el-guide">
+      <div class="card">
+        <div class="guide-section">
+          <h3>mode_medium — How was the text produced?</h3>
+          <p><b>written</b> — Composed as written text. Default for web content. Informal writing is still "written."</p>
+          <p><b>transcribed</b> — Originally spoken, then written down. Requires clear evidence: transcript labels, speaker turns ("Q:", "Interviewer:"), text from a speech/podcast/interview. Conversational tone alone is NOT enough.</p>
+          <p><b>cannot_rate</b> — (1) Machine-generated, boilerplate, navigational, or structural content (cookie notices, footers, breadcrumbs, metadata, share buttons). (2) Not a complete sentence or coherent phrase.</p>
+        </div>
+        <div class="guide-section">
+          <h3>mode_turn — Monologic or dialogic?</h3>
+          <p><b>monologic</b> — One author addressing a general audience: articles, blog posts, encyclopedias, guides. Editorially structured Q&A (FAQ pages, how-to sites) is monologic — it's reference content, not real conversation.</p>
+          <p><b>dialogic</b> — Participatory context where responses are expected: forum threads, comment sections, social media, chat, interviews with alternating speakers.</p>
+        </div>
+        <div class="guide-section">
+          <h3>field_activity — What is the text doing?</h3>
+          <p><b>recounting</b> — Reporting specific events in temporal sequence. Requires events presented as having happened.</p>
+          <p><b>explaining</b> — Presenting factual information, concepts, general knowledge. Residual category — use only when nothing more specific applies.</p>
+          <p><b>directing</b> — Telling the reader how to do something: tutorials, recipes, instructions.</p>
+          <p><b>evaluating</b> — Subjective views, arguments, complaints, praise, commentary. Includes "Thanks!", "Great post!" If text argues what <i>should</i> be done, it's evaluating.</p>
+          <p><b>promoting</b> — Selling, advertising, marketing. When an org describes its own services, that's promoting even if the surface text sounds neutral.</p>
+          <p><b>creating</b> — Poetry, song lyrics, verse, artistic literary expression.</p>
+        </div>
+        <div class="guide-section">
+          <h3>tenor_formality — Register formality</h3>
+          <p><b>formal</b> — Institutional, professional, or academic. Complex syntax, specialized vocabulary, impersonal constructions, no contractions.</p>
+          <p><b>informal</b> — Casual, conversational, personal. Contractions, colloquialisms, first-person, simple syntax, slang.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ DONE ═══ -->
+  <div id="v-done" class="done-screen">
+    <h2>All done!</h2>
+    <p>Thank you for annotating.</p>
+    <button class="btn btn-green" onclick="save()">Download Results</button>
+  </div>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════
+   Config
+   ═══════════════════════════════════════════════════════════════ */
+const DIMS = [
+  { key: "mode_medium",      label: "Medium",    opts: ["written","transcribed","cannot_rate"] },
+  { key: "mode_turn",        label: "Turn",      opts: ["monologic","dialogic"],               gate: m => m !== "cannot_rate" },
+  { key: "field_activity",   label: "Activity",  opts: ["recounting","explaining","directing","evaluating","promoting","creating"], gate: m => m !== "cannot_rate" },
+  { key: "tenor_formality",  label: "Formality", opts: ["formal","informal"],                  gate: m => m !== "cannot_rate" },
+];
+
+const CONTEXT = 5;
+const MAX_CHARS = 500;
+
+/* ═══════════════════════════════════════════════════════════════
+   State
+   ═══════════════════════════════════════════════════════════════ */
+let tasks = [];
+let results = {};   // task_id → { mode_medium, mode_turn, field_activity, tenor_formality }
+let idx = 0;
+let who = "";
+let focusDim = 0;   // which dimension group has keyboard focus
+
+/* ═══════════════════════════════════════════════════════════════
+   JSONL → tasks (in-browser extraction)
+   ═══════════════════════════════════════════════════════════════ */
+function parseLines(md) {
+  if (!md || !md.trim()) return [];
+  const out = [];
+  for (const raw of md.split("\n")) {
+    const m = raw.match(/^\[(\d+)]\s*(.*)/);
+    if (m) out.push({ num: +m[1], text: m[2] });
+  }
+  return out;
+}
+
+function trunc(s, n) { return s.length <= n ? s : s.slice(0, n) + "…"; }
+
+function isStructural(t) {
+  const s = t.trim();
+  return s.startsWith("# ") || s.startsWith("TABLE: ") || s.startsWith("CODE: ");
+}
+
+function jsonlToTasks(text) {
+  const rows = text.trim().split("\n").map(l => JSON.parse(l));
+  const out = [];
+
+  for (let di = 0; di < rows.length; di++) {
+    const row = rows[di];
+    const url = row.u || "";
+    const ann = row.llm_register_annotation || {};
+
+    for (const sec of ["main","comments"]) {
+      const md = row[`markdown_${sec}`] || "";
+      const lines = parseLines(md);
+      if (!lines.length) continue;
+
+      const anns = ann[sec] || [];
+      const byLine = {};
+      for (const a of anns) if (a.line != null) byLine[a.line] = a;
+
+      for (let i = 0; i < lines.length; i++) {
+        const ln = lines[i];
+        const la = byLine[ln.num];
+
+        // Skip structural
+        if (isStructural(ln.text)) continue;
+        if (la && la.is_structural) continue;
+        if (la && la.mode_medium === "cannot_rate" && la.is_structural) continue;
+
+        const before = [];
+        for (let j = Math.max(0, i - CONTEXT); j < i; j++)
+          before.push({ num: lines[j].num, text: trunc(lines[j].text, MAX_CHARS) });
+
+        const after = [];
+        for (let j = i + 1; j < Math.min(lines.length, i + 1 + CONTEXT); j++)
+          after.push({ num: lines[j].num, text: trunc(lines[j].text, MAX_CHARS) });
+
+        out.push({
+          task_id: out.length,
+          doc_idx: di,
+          section: sec,
+          url,
+          line_num: ln.num,
+          line_text: trunc(ln.text, MAX_CHARS),
+          context_before: before,
+          context_after: after,
+          llm: la ? {
+            mode_medium:    la.mode_medium    || null,
+            mode_turn:      la.mode_turn      || null,
+            field_activity:  la.field_activity  || null,
+            tenor_formality: la.tenor_formality || null,
+          } : null,
+        });
+      }
+    }
+  }
+  return out;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Persistence
+   ═══════════════════════════════════════════════════════════════ */
+function skey() { return "reg4_" + who; }
+
+function autosave() {
+  try { localStorage.setItem(skey(), JSON.stringify({ who, idx, results, ids: tasks.map(t=>t.task_id) })); } catch(e) {}
+}
+
+function tryResume() {
+  try {
+    const s = JSON.parse(localStorage.getItem(skey()));
+    if (!s || JSON.stringify(s.ids) !== JSON.stringify(tasks.map(t=>t.task_id))) return false;
+    results = s.results; idx = s.idx; return true;
+  } catch(e) { return false; }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Load
+   ═══════════════════════════════════════════════════════════════ */
+function doLoad() {
+  who = document.getElementById("inp-name").value.trim();
+  if (!who) { alert("Enter your annotator ID."); return; }
+  const f = document.getElementById("inp-file");
+  if (!f.files.length) { alert("Select a file."); return; }
+
+  const errEl = document.getElementById("load-err");
+  errEl.textContent = "Loading…";
+
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const text = e.target.result.trim();
+      tasks = text.startsWith("[") ? JSON.parse(text) : jsonlToTasks(text);
+      errEl.textContent = "";
+      if (!tasks.length) { errEl.textContent = "No classifiable segments found."; return; }
+      boot();
+    } catch(err) { errEl.textContent = "Error: " + err.message; }
+  };
+  reader.readAsText(f.files[0]);
+}
+
+function boot() {
+  if (!tryResume()) {
+    // Pre-fill with LLM predictions
+    for (const t of tasks) {
+      const r = { mode_medium: null, mode_turn: null, field_activity: null, tenor_formality: null };
+      if (t.llm) {
+        for (const d of DIMS) {
+          if (t.llm[d.key] != null) r[d.key] = t.llm[d.key];
+        }
+        // Enforce null cascade for cannot_rate
+        if (r.mode_medium === "cannot_rate") {
+          r.mode_turn = null; r.field_activity = null; r.tenor_formality = null;
+        }
+      }
+      results[t.task_id] = r;
+    }
+  }
+
+  document.getElementById("v-setup").style.display = "none";
+  document.getElementById("v-ann").style.display = "block";
+  document.getElementById("el-who").textContent = who;
+  render();
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Render
+   ═══════════════════════════════════════════════════════════════ */
+function esc(s) { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
+
+function agreement() {
+  let ag = 0, dis = 0;
+  for (const t of tasks) {
+    const r = results[t.task_id];
+    if (!r || r.mode_medium === null || !t.llm) continue;
+    const match = DIMS.every(d => r[d.key] === (t.llm[d.key] ?? null));
+    match ? ag++ : dis++;
+  }
+  return { ag, dis, tot: ag + dis };
+}
+
+function render() {
+  const t = tasks[idx];
+  const r = results[t.task_id];
+  const answered = Object.values(results).filter(r => r.mode_medium !== null).length;
+
+  // Progress
+  document.getElementById("el-prog").textContent = `${answered}/${tasks.length}`;
+  document.getElementById("el-pbar").style.width = `${100 * answered / tasks.length}%`;
+  document.getElementById("el-counter").textContent = `${idx + 1} / ${tasks.length}`;
+
+  // Agreement
+  const a = agreement();
+  if (a.tot > 0) {
+    const pct = (100 * a.ag / a.tot).toFixed(0);
+    document.getElementById("el-agree").innerHTML =
+      `<span class="stat-agree">✓${a.ag}</span> <span class="stat-disagree">✗${a.dis}</span> ${pct}%`;
+  } else {
+    document.getElementById("el-agree").textContent = "";
+  }
+
+  // Meta
+  document.getElementById("el-meta").innerHTML =
+    `<span>#${t.task_id}</span><span>doc ${t.doc_idx}</span><span>${t.section}</span>` +
+    `<span title="${esc(t.url)}">${esc(t.url.length > 65 ? t.url.slice(0,65)+"…" : t.url)}</span>`;
+
+  // LLM row
+  const llmEl = document.getElementById("el-llm");
+  if (t.llm && t.llm.mode_medium) {
+    let chips = DIMS.map(d => t.llm[d.key] ? `<span class="llm-chip">${t.llm[d.key]}</span>` : "").join(" ");
+    llmEl.innerHTML = `<span class="llm-label">LLM</span> ${chips}`;
+    llmEl.style.display = "flex";
+  } else {
+    llmEl.style.display = "none";
+  }
+
+  // Lines
+  let lh = "";
+  if (t.context_before.length) {
+    for (const l of t.context_before)
+      lh += `<div class="ln ctx"><span class="ln-num">${l.num}</span><span class="ln-txt">${esc(l.text)}</span></div>`;
+    lh += `<div class="sep">───</div>`;
+  }
+  lh += `<div class="ln tgt"><span class="ln-num">${t.line_num}</span><span class="ln-txt">${esc(t.line_text)}</span></div>`;
+  if (t.context_after.length) {
+    lh += `<div class="sep">───</div>`;
+    for (const l of t.context_after)
+      lh += `<div class="ln ctx"><span class="ln-num">${l.num}</span><span class="ln-txt">${esc(l.text)}</span></div>`;
+  }
+  document.getElementById("el-lines").innerHTML = lh;
+
+  // Annotation groups
+  const medium = r.mode_medium;
+  let ah = "";
+  for (let gi = 0; gi < DIMS.length; gi++) {
+    const d = DIMS[gi];
+    const gated = d.gate && !d.gate(medium);
+    const active = gi === focusDim;
+    ah += `<div class="grp ${gated ? "disabled" : ""} ${active ? "active" : ""}" data-gi="${gi}">`;
+    ah += `<div class="grp-label">${d.label} <span class="grp-focus"></span></div>`;
+    ah += `<div class="opts">`;
+    for (let oi = 0; oi < d.opts.length; oi++) {
+      const v = d.opts[oi];
+      const sel = r[d.key] === v;
+      const isLlm = t.llm && t.llm[d.key] === v;
+      ah += `<button class="opt ${sel?"sel":""} ${isLlm?"llm":""}" onclick="pick(${gi},${oi})">`;
+      ah += `<span class="key">${oi+1}</span>${v}</button>`;
+    }
+    ah += `</div></div>`;
+  }
+  document.getElementById("el-ann").innerHTML = ah;
+
+  // Focus to first unanswered
+  if (r.mode_medium === null) focusDim = 0;
+  else if (!medium || medium === "cannot_rate") focusDim = 0;
+  else {
+    let found = false;
+    for (let gi = 1; gi < DIMS.length; gi++) {
+      if (r[DIMS[gi].key] === null) { focusDim = gi; found = true; break; }
+    }
+    if (!found) focusDim = 0;
+  }
+  // Re-render active indicator
+  document.querySelectorAll(".grp").forEach((el, gi) => {
+    el.classList.toggle("active", gi === focusDim);
+  });
+
+  document.getElementById("el-next").textContent = idx === tasks.length - 1 ? "Finish ✓" : "Next →";
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Interaction
+   ═══════════════════════════════════════════════════════════════ */
+function pick(gi, oi) {
+  const t = tasks[idx];
+  const r = results[t.task_id];
+  const d = DIMS[gi];
+  const val = d.opts[oi];
+
+  r[d.key] = val;
+
+  // If medium → cannot_rate, null out dependent fields
+  if (d.key === "mode_medium" && val === "cannot_rate") {
+    r.mode_turn = null; r.field_activity = null; r.tenor_formality = null;
+    focusDim = 0;
+  } else if (d.key === "mode_medium") {
+    // Advance to next empty
+    focusDim = 1;
+  } else if (gi < DIMS.length - 1) {
+    focusDim = gi + 1;
+    // Skip gated
+    while (focusDim < DIMS.length && DIMS[focusDim].gate && !DIMS[focusDim].gate(r.mode_medium)) focusDim++;
+    if (focusDim >= DIMS.length) focusDim = 0;
+  } else {
+    focusDim = 0;
+  }
+
+  autosave();
+  render();
+}
+
+function go(dir) {
+  const next = idx + dir;
+  if (next < 0 || next >= tasks.length) {
+    if (dir > 0 && idx === tasks.length - 1) {
+      document.getElementById("v-ann").style.display = "none";
+      document.getElementById("v-done").style.display = "block";
+    }
+    return;
+  }
+  idx = next;
+  focusDim = 0;
+  autosave();
+  render();
+  window.scrollTo(0, 0);
+}
+
+function toggleGuide() {
+  const el = document.getElementById("el-guide");
+  el.style.display = el.style.display === "none" ? "block" : "none";
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Save
+   ═══════════════════════════════════════════════════════════════ */
+function save() {
+  const out = {
+    annotator: who,
+    timestamp: new Date().toISOString(),
+    total_tasks: tasks.length,
+    scheme: {
+      mode_medium:    DIMS[0].opts,
+      mode_turn:      DIMS[1].opts,
+      field_activity:  DIMS[2].opts,
+      tenor_formality: DIMS[3].opts,
+    },
+    agreement: agreement(),
+    annotations: tasks.map(t => ({
+      task_id:         t.task_id,
+      doc_idx:         t.doc_idx,
+      section:         t.section,
+      url:             t.url,
+      line_num:        t.line_num,
+      line_text:       t.line_text,
+      context_before:  t.context_before,
+      context_after:   t.context_after,
+      llm_labels:      t.llm,
+      human_labels:    results[t.task_id],
+    })),
+  };
+  const blob = new Blob([JSON.stringify(out, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `register_annotations_${who}_${new Date().toISOString().slice(0,10)}.json`;
+  a.click();
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Keyboard
+   ═══════════════════════════════════════════════════════════════ */
+document.addEventListener("keydown", e => {
+  if (document.getElementById("v-ann").style.display === "none") return;
+  // Don't capture when typing in input
+  if (e.target.tagName === "INPUT") return;
+
+  if (e.key === "ArrowRight") { go(1); e.preventDefault(); return; }
+  if (e.key === "ArrowLeft")  { go(-1); e.preventDefault(); return; }
+
+  if (e.key === "Tab") {
+    e.preventDefault();
+    const r = results[tasks[idx].task_id];
+    const medium = r.mode_medium;
+    const maxDim = (medium && medium !== "cannot_rate") ? DIMS.length - 1 : 0;
+    if (e.shiftKey) {
+      focusDim = focusDim > 0 ? focusDim - 1 : maxDim;
+    } else {
+      focusDim = focusDim < maxDim ? focusDim + 1 : 0;
+    }
+    render();
+    return;
+  }
+
+  const num = parseInt(e.key);
+  if (isNaN(num) || num < 1) return;
+
+  const d = DIMS[focusDim];
+  if (!d) return;
+  const r = results[tasks[idx].task_id];
+  if (d.gate && !d.gate(r.mode_medium)) return;
+  if (num > d.opts.length) return;
+  pick(focusDim, num - 1);
+});
+</script>
+</body>
+</html>
