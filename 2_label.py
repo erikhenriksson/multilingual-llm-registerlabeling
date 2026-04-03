@@ -141,18 +141,17 @@ presented as primary content. This includes religious scripture and liturgical \
 text when presented as primary content (e.g. Bible verses, Quranic ayat, \
 hymns).
  
-## tenor_formality (required if rateable; null if cannot_rate)
+## tenor_formality (required if rateable; null if cannot_rate) \
 - "formal" — institutional, professional, academic, or published register.
-This is the DEFAULT for all web content. Classify as formal unless there
-is strong counter-evidence. When in doubt, choose formal.
-- "informal" — casual, conversational, or personal register. Requires
-MULTIPLE co-occurring signals such as: slang or colloquial vocabulary,
-emoji or emoticons, non-standard spelling or capitalization, profanity,
-or internet-specific discourse patterns. Common grammatical features of
-the language, first-person pronouns, direct address, rhetorical
-questions, emotional intensity, personal anecdotes, and discourse
-connectors are NOT informality signals. A single borderline feature is
-never sufficient.
+This is the default for most web content. \
+- "informal" — casual, conversational, or personal register. Requires \
+MULTIPLE co-occurring signals such as: slang or colloquial vocabulary, \
+emoji or emoticons, non-standard spelling or capitalization, profanity, \
+or internet-specific discourse patterns. Common grammatical features of \
+the language, first-person pronouns, direct address, rhetorical \
+questions, emotional intensity, personal anecdotes, and discourse \
+connectors are NOT informality signals. A single borderline feature is \
+never sufficient. \
  
 When signals are mixed, choose the dominant register of the line.
  
