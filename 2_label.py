@@ -89,10 +89,14 @@ evidence of oral origin: transcript labels, speaker turn markers \
 podcast, interview, or hearing. Informal writing is still "written."
 - "cannot_rate" — use when the text is (1) machine-generated, boilerplate, \
 navigational, or structural content (e.g. cookie notices, footers, breadcrumbs, \
-copyright lines, share buttons, metadata), or (2) not a complete sentence or \
-coherent phrase. A sentence split across multiple lines should be classified \
-by its full meaning, not marked cannot_rate for being a fragment. Any complete \
-sentence or coherent phrase with human communicative intent is classifiable.
+copyright lines, share buttons, metadata labels like "Type: Oscillator"), \
+(2) garbled or spam-like text with no coherent communicative intent, or \
+(3) not a complete sentence or coherent phrase — including isolated words or \
+fragments (e.g. "Now", "Next", "231") that only function as transitions or \
+labels within a larger text. A sentence split across multiple lines should be \
+classified by its full meaning, not marked cannot_rate for being a fragment. \
+Any complete sentence or coherent phrase with human communicative intent is \
+classifiable.
  
 ## mode_turn (required if rateable; null if cannot_rate)
 - "monologic" — one author/speaker addressing a general audience: articles, \
@@ -109,7 +113,9 @@ activity. "explaining" is the residual category — use it only when no more \
 specific activity applies.
  
 - "recounting" — reporting specific events in temporal sequence. Requires \
-events presented as having happened. \
+events presented as having happened, with narrative presentation — not just \
+the presence of a date or an event-denoting verb. A reference-style mention \
+of an event (e.g. a citation or catalog entry) is explaining, not recounting. \
 Example: "The company was founded in 2005 and has grown to 500 employees" \
 → explaining. "In March 2005, the founders quit their jobs, pooled $10,000, \
 and launched from a garage" → recounting.
@@ -126,9 +132,14 @@ advocates a position, it is "evaluating" even if the topic is factual.
 - "promoting" — selling, advertising, or marketing a product, service, brand, \
 or organization. Key test: WHO is writing and WHY. When an organization \
 describes its own services or offerings, the activity is "promoting" even if \
-the surface text reads as neutral. Includes fundraising appeals.
+the surface text reads as neutral. Includes fundraising appeals and statements \
+about the availability or features of one's own product or service. \
+Apply this test actively: if context suggests the author represents the entity \
+being described, classify as promoting.
 - "creating" — poetry, song lyrics, verse, or artistic literary expression \
-presented as primary content.
+presented as primary content. This includes religious scripture and liturgical \
+text when presented as primary content (e.g. Bible verses, Quranic ayat, \
+hymns).
  
 ## tenor_formality (required if rateable; null if cannot_rate)
 - "formal" — institutional, professional, or academic register. Signals: \
@@ -137,7 +148,16 @@ no contractions or colloquialisms.
 - "informal" — casual, conversational, or personal register. Signals: \
 contractions, colloquialisms, first-person address, simple syntax, slang.
  
-When signals are mixed, choose the dominant register of the line.
+When signals are mixed, choose the dominant register of the line. \
+Do not over-index on isolated surface markers. A few contractions \
+or first-person pronouns do not make text informal if the overall register \
+is professional, instructional, or promotional. Reserve "informal" for text \
+where the overall tone is genuinely casual or conversational.
+ 
+# Using context
+ 
+When a target line is ambiguous, lean on surrounding [CONTEXT] and \
+[DOCUMENT OPENING] lines — especially for field_activity and tenor_formality.
  
 # Boundary examples
  
