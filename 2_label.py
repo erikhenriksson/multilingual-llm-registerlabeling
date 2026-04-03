@@ -143,19 +143,12 @@ text when presented as primary content (e.g. Bible verses, Quranic ayat, \
 hymns).
  
 ## tenor_formality (required if rateable; null if cannot_rate)
-- "formal" — institutional, professional, academic, or published register. \
-This is the default for most web content.
-- "informal" — casual, conversational, or personal register. Requires \
-MULTIPLE co-occurring signals such as: slang or colloquial vocabulary, \
-emoji or emoticons, non-standard spelling or capitalization, profanity, \
-internet-specific discourse patterns, stylistic fragmentation (deliberate \
-one-word or very short sentences used for emphasis or comedic timing), or \
-spoken-register markers like ellipsis-as-dramatic-pause. Common grammatical \
-features of the language, first-person pronouns, and discourse connectors \
-are NOT informality signals on their own. However, direct address, rhetorical \
-questions, and emotional intensity — while not sufficient by themselves — \
-should be counted as supporting evidence when they co-occur with signals from \
-the list above.
+- "formal" — the default for web content. Language appropriate for \
+professional or public communication between strangers.
+- "informal" — language that signals familiarity or casualness through \
+features like slang, profanity, emoji, non-standard orthography, or \
+internet-specific discourse. Requires multiple such features. Personal \
+tone alone is not informality.
  
 When signals are mixed, choose the dominant register of the line.
  
