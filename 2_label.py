@@ -1,12 +1,12 @@
 """
-Register classification of web document segments via LLM (Gemini).
+Register classification of web document segments via LLM (OpenRouter API).
 
 Usage:
-    export GEMINI_API_KEY="..."
+    export OPENROUTER_API_KEY="..."
     python classify_registers.py --input sample_10k_converted.jsonl --output sample_10k_annotated.jsonl
 
 Optional:
-    --model           Model string (default: gemini-3-flash-preview)
+    --model           Model string (default: google/gemini-3-flash-preview)
     --max-docs        Only process first N docs
     --start-from      Resume from doc index N (0-based)
     --verbose-prompts Print full system + user prompt before each LLM call
@@ -19,13 +19,12 @@ import re
 import sys
 import time
 
-from google import genai
-from google.genai import types
+import requests
 
 # ---------------------------------------------------------------------------
 # Defaults
 # ---------------------------------------------------------------------------
-DEFAULT_MODEL = "gemini-3-flash-preview"
+DEFAULT_MODEL = "google/gemini-3-flash-preview"
 CHUNK_SIZE = 15  # lines per API call
 CONTEXT_LINES = 10  # surrounding lines shown as context
 MAX_LINE_CHARS = 500  # truncate long lines
@@ -51,9 +50,18 @@ VALID_FIELD_ACTIVITY = {
 VALID_TENOR_FORMALITY = {"formal", "informal", None}
 
 # ---------------------------------------------------------------------------
-# Gemini client (reads GEMINI_API_KEY env var automatically)
+# OpenRouter API config
 # ---------------------------------------------------------------------------
-gemini_client = genai.Client()
+OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
+
+
+def _get_api_key():
+    key = os.environ.get("OPENROUTER_API_KEY")
+    if not key:
+        print("Set OPENROUTER_API_KEY env variable.", file=sys.stderr)
+        sys.exit(1)
+    return key
+
 
 # ---------------------------------------------------------------------------
 # System prompt
@@ -372,30 +380,10 @@ def build_user_prompt(url, section, lines, chunk_start, chunk_end, doc_preamble=
     return "\n".join(parts)
 
 
-def _extract_text(response):
-    """Extract only non-thought text parts from a Gemini response.
-
-    response.text can include thinking content on Gemini 3 models.
-    We iterate over parts and skip anything flagged as thought.
-    """
-    parts = []
-    for candidate in response.candidates:
-        for part in candidate.content.parts:
-            if not part.text:
-                continue
-            if getattr(part, "thought", False):
-                continue  # skip thinking content
-            parts.append(part.text)
-    if not parts:
-        raise ValueError(
-            f"No non-thought text in response "
-            f"(finish_reason={getattr(response.candidates[0], 'finish_reason', 'unknown')})"
-        )
-    return "".join(parts)
-
-
 def call_llm(model, user_prompt, verbose=False):
-    """Call Gemini API with retries."""
+    """Call OpenRouter API with retries."""
+    api_key = _get_api_key()
+
     if verbose:
         print("\n" + "=" * 80, file=sys.stderr)
         print(">>> SYSTEM PROMPT:", file=sys.stderr)
@@ -407,22 +395,39 @@ def call_llm(model, user_prompt, verbose=False):
 
     for attempt in range(MAX_RETRIES):
         try:
-            response = gemini_client.models.generate_content(
-                model=model,
-                contents=user_prompt,
-                config=types.GenerateContentConfig(
-                    system_instruction=SYSTEM_PROMPT,
-                    temperature=0,
-                    max_output_tokens=4096,
-                    # Gemini 3 models cannot fully disable thinking, but
-                    # MINIMAL constrains it to near-zero tokens and keeps
-                    # thinking out of the main response text.
-                    thinking_config=types.ThinkingConfig(
-                        thinking_level="MINIMAL",
-                    ),
+            response = requests.post(
+                url=OPENROUTER_API_URL,
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                data=json.dumps(
+                    {
+                        "model": model,
+                        "messages": [
+                            {"role": "system", "content": SYSTEM_PROMPT},
+                            {"role": "user", "content": user_prompt},
+                        ],
+                        "temperature": 0,
+                        "max_tokens": 4096,
+                    }
                 ),
+                timeout=120,
             )
-            return _extract_text(response)
+            response.raise_for_status()
+            data = response.json()
+
+            if "error" in data:
+                raise RuntimeError(f"OpenRouter error: {data['error']}")
+
+            content = data["choices"][0]["message"]["content"]
+            if not content or not content.strip():
+                raise ValueError(
+                    f"Empty response from OpenRouter "
+                    f"(finish_reason={data['choices'][0].get('finish_reason', 'unknown')})"
+                )
+            return content
+
         except Exception as e:
             wait = RETRY_BACKOFF * (2**attempt)
             print(
@@ -804,9 +809,7 @@ def main():
     )
     args = parser.parse_args()
 
-    if not os.environ.get("GEMINI_API_KEY"):
-        print("Set GEMINI_API_KEY env variable.", file=sys.stderr)
-        sys.exit(1)
+    _get_api_key()  # validate early
 
     if args.retry:
         retry_mode(args)
