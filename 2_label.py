@@ -54,6 +54,15 @@ VALID_TENOR_FORMALITY = {"formal", "informal", None}
 # ---------------------------------------------------------------------------
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
+# HTTP status codes that indicate a fatal, non-retryable problem
+FATAL_HTTP_CODES = {401, 402, 403}
+
+
+class FatalAPIError(Exception):
+    """Raised for errors that should stop the entire run (e.g. out of credits)."""
+
+    pass
+
 
 def _get_api_key():
     key = os.environ.get("OPENROUTER_API_KEY")
@@ -414,11 +423,27 @@ def call_llm(model, user_prompt, verbose=False):
                 ),
                 timeout=120,
             )
+            # Check for fatal HTTP errors (no credits, auth failure) before retrying
+            if response.status_code in FATAL_HTTP_CODES:
+                try:
+                    err_body = response.json()
+                except Exception:
+                    err_body = response.text
+                raise FatalAPIError(
+                    f"HTTP {response.status_code}: {err_body} — "
+                    f"cannot continue (out of credits or auth failure)"
+                )
+
             response.raise_for_status()
             data = response.json()
 
             if "error" in data:
-                raise RuntimeError(f"OpenRouter error: {data['error']}")
+                err = data["error"]
+                # Some OpenRouter errors come as 200 with error in body
+                err_code = err.get("code") if isinstance(err, dict) else None
+                if err_code in (401, 402, 403, "insufficient_credits"):
+                    raise FatalAPIError(f"OpenRouter error: {err}")
+                raise RuntimeError(f"OpenRouter error: {err}")
 
             content = data["choices"][0]["message"]["content"]
             if not content or not content.strip():
@@ -427,6 +452,10 @@ def call_llm(model, user_prompt, verbose=False):
                     f"(finish_reason={data['choices'][0].get('finish_reason', 'unknown')})"
                 )
             return content
+
+        except FatalAPIError:
+            # Don't retry fatal errors — propagate immediately
+            raise
 
         except Exception as e:
             wait = RETRY_BACKOFF * (2**attempt)
@@ -838,53 +867,69 @@ def main():
     t_start = time.time()
 
     with open(args.output, "a") as fout:
-        for idx, raw_line in _iter_lines(args.input, start, end):
-            doc_start = time.time()
-            row = json.loads(raw_line)
-            url = row.get("u", "")
+        try:
+            for idx, raw_line in _iter_lines(args.input, start, end):
+                doc_start = time.time()
+                row = json.loads(raw_line)
+                url = row.get("u", "")
 
-            try:
-                main_ann = classify_section(
-                    args.model,
-                    url,
-                    "main",
-                    row.get("markdown_main", ""),
-                    verbose=args.verbose_prompts,
+                try:
+                    main_ann = classify_section(
+                        args.model,
+                        url,
+                        "main",
+                        row.get("markdown_main", ""),
+                        verbose=args.verbose_prompts,
+                    )
+                except FatalAPIError:
+                    raise  # propagate to outer handler
+                except Exception as e:
+                    print(f"  FAILED main: {e}", file=sys.stderr)
+                    main_ann = []
+
+                try:
+                    comments_ann = classify_section(
+                        args.model,
+                        url,
+                        "comments",
+                        row.get("markdown_comments", ""),
+                        verbose=args.verbose_prompts,
+                    )
+                except FatalAPIError:
+                    raise  # propagate to outer handler
+                except Exception as e:
+                    print(f"  FAILED comments: {e}", file=sys.stderr)
+                    comments_ann = []
+
+                row["llm_register_annotation"] = {
+                    "main": main_ann,
+                    "comments": comments_ann,
+                }
+
+                fout.write(json.dumps(row, ensure_ascii=False) + "\n")
+                fout.flush()
+
+                doc_time = time.time() - doc_start
+                done = idx - start + 1
+                elapsed = time.time() - t_start
+                avg = elapsed / done
+                remaining = (end - start - done) * avg
+                eta_min = remaining / 60
+                print(
+                    f"[{idx}] {doc_time:.1f}s | {done}/{end - start} | "
+                    f"avg {avg:.1f}s/doc | ETA {eta_min:.0f}min | {url[:60]}"
                 )
-            except Exception as e:
-                print(f"  FAILED main: {e}", file=sys.stderr)
-                main_ann = []
 
-            try:
-                comments_ann = classify_section(
-                    args.model,
-                    url,
-                    "comments",
-                    row.get("markdown_comments", ""),
-                    verbose=args.verbose_prompts,
-                )
-            except Exception as e:
-                print(f"  FAILED comments: {e}", file=sys.stderr)
-                comments_ann = []
-
-            row["llm_register_annotation"] = {
-                "main": main_ann,
-                "comments": comments_ann,
-            }
-
-            fout.write(json.dumps(row, ensure_ascii=False) + "\n")
-            fout.flush()
-
-            doc_time = time.time() - doc_start
-            done = idx - start + 1
-            elapsed = time.time() - t_start
-            avg = elapsed / done
-            remaining = (end - start - done) * avg
-            eta_min = remaining / 60
+        except FatalAPIError as e:
             print(
-                f"[{idx}] {doc_time:.1f}s | {done}/{end - start} | "
-                f"avg {avg:.1f}s/doc | ETA {eta_min:.0f}min | {url[:60]}"
+                f"\n{'=' * 60}\n"
+                f"FATAL: {e}\n"
+                f"Stopping. Output has been saved up to the last successful doc.\n"
+                f"Re-run with the same command to resume automatically.\n"
+                f"{'=' * 60}",
+                file=sys.stderr,
             )
+            sys.exit(2)
 
     total_time = time.time() - t_start
     print(
