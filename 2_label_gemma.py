@@ -17,6 +17,10 @@ Optional:
 import argparse
 import json
 import os
+
+os.environ["HF_HOME"] = "./hf_cache"
+
+
 import re
 import sys
 import time
