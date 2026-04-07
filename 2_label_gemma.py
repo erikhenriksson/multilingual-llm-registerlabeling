@@ -1,14 +1,16 @@
 """
 Register classification of web document segments using a local LLM on LUMI.
 
-Loads Gemma-4-31b-it once, then classifies documents from a JSONL file.
-Writes results one doc at a time so you can resume by re-running the same command.
+Loads Gemma-4-26B-A4B-it (MoE, 26B total / 4B active) once, then classifies
+documents from a JSONL file. Much faster than the 31B dense model with
+near-identical quality. Writes results one doc at a time so you can resume
+by re-running the same command.
 
 Usage:
     python classify_registers_local.py --input sample.jsonl --output annotated.jsonl
 
 Optional:
-    --model-id        HuggingFace model ID (default: google/gemma-4-31b-it)
+    --model-id        HuggingFace model ID (default: google/gemma-4-26B-A4B-it)
     --max-docs        Only process first N docs (from the resume point)
     --start-from      Resume from doc index N (0-based)
     --verbose-prompts Print full prompts before each LLM call
@@ -19,8 +21,6 @@ import json
 import os
 
 os.environ["HF_HOME"] = "./hf_cache"
-
-
 import re
 import sys
 import time
@@ -32,14 +32,15 @@ from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 # ---------------------------------------------------------------------------
 # Defaults
 # ---------------------------------------------------------------------------
-os.environ["HF_HOME"] = "./hf_cache"
 
-DEFAULT_MODEL_ID = "google/gemma-4-31b-it"
+
+DEFAULT_MODEL_ID = "google/gemma-4-26B-A4B-it"
 CHUNK_SIZE = 15  # lines per LLM call
 CONTEXT_LINES = 10  # surrounding lines shown as context
 MAX_LINE_CHARS = 500  # truncate long lines
 MAX_NEW_TOKENS = 2048  # enough for 15 lines of JSON annotations
 DOC_PREAMBLE_LINES = 5  # opening lines sent as document-level context
+MAX_CHUNK_RETRIES = 3  # retries per chunk before giving up on the document
 
 # ---------------------------------------------------------------------------
 # Valid values for annotation validation
@@ -59,7 +60,7 @@ VALID_TENOR_FORMALITY = {"formal", "informal", None}
 
 
 # ---------------------------------------------------------------------------
-# System prompt (same as original — defines the classification task)
+# System prompt (defines the classification task)
 # ---------------------------------------------------------------------------
 SYSTEM_PROMPT = """\
 You classify text segments from web documents along four register dimensions \
@@ -214,31 +215,34 @@ def load_model(model_id):
         meta_model = AutoModelForCausalLM.from_config(config)
 
     device_map = infer_auto_device_map(meta_model)
-    # Gemma vision tower params need to be on GPU 0
-    device_map["model.vision_tower.std_bias"] = 0
-    device_map["model.vision_tower.std_scale"] = 0
 
-    print(f"Loading model weights (float16)...")
+    # Vision tower params must land on GPU 0 (they're small but
+    # infer_auto_device_map sometimes puts them on cpu/disk).
+    # This applies to both the 31B dense and 26B MoE models.
+    for key in list(device_map.keys()):
+        if "vision_tower" in key:
+            device_map[key] = 0
+
+    print(f"Loading model weights (bfloat16)...")
     model = AutoModelForCausalLM.from_pretrained(
         model_id,
         device_map=device_map,
-        dtype=torch.float16,
+        torch_dtype=torch.bfloat16,
     )
-    print(f"Model loaded.")
+
+    # Show which GPUs are in use
+    gpus_used = sorted(set(v for v in device_map.values() if isinstance(v, int)))
+    print(f"Model loaded across {len(gpus_used)} GPU(s): {gpus_used}")
     return model, tokenizer
 
 
 # ===================================================================
-# LOCAL INFERENCE (replaces the HTTP API call)
+# LOCAL INFERENCE
 # ===================================================================
 
 
 def call_llm(model, tokenizer, user_prompt, verbose=False):
-    """Run one classification prompt through the local model.
-
-    Formats the system + user prompt as a chat, tokenizes, generates,
-    and returns the decoded text.
-    """
+    """Run one classification prompt through the local model."""
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": user_prompt},
@@ -266,21 +270,19 @@ def call_llm(model, tokenizer, user_prompt, verbose=False):
         output_ids = model.generate(
             **inputs,
             max_new_tokens=MAX_NEW_TOKENS,
-            do_sample=False,  # greedy, like temperature=0
+            do_sample=False,
         )
 
-    # Decode only the newly generated tokens
     response = tokenizer.decode(output_ids[0][input_len:], skip_special_tokens=True)
     return response
 
 
 # ===================================================================
-# HELPERS (unchanged from original)
+# HELPERS
 # ===================================================================
 
 
 def _cannot_rate(line_num):
-    """Fallback annotation for unrateable lines."""
     return {
         "line": line_num,
         "mode_medium": "cannot_rate",
@@ -291,7 +293,6 @@ def _cannot_rate(line_num):
 
 
 def _structural(line_num):
-    """Annotation for structural lines (headings, tables, code)."""
     return {
         "line": line_num,
         "mode_medium": "cannot_rate",
@@ -303,60 +304,60 @@ def _structural(line_num):
 
 
 def validate_annotation(ann):
-    """Validate and repair an annotation dict. Returns corrected copy."""
+    """Validate an annotation dict.
+
+    Returns the annotation (possibly with nulls normalised for cannot_rate),
+    or None if any field has an invalid value. A None return means the LLM
+    produced garbage for this line — it is NOT a cannot_rate.
+    """
     ann = dict(ann)
 
     if ann.get("mode_medium") not in VALID_MODE_MEDIUM:
         print(
-            f"  Invalid mode_medium '{ann.get('mode_medium')}' on line {ann.get('line')}, "
-            f"defaulting to cannot_rate",
+            f"  Invalid mode_medium '{ann.get('mode_medium')}' on line {ann.get('line')}",
             file=sys.stderr,
         )
-        ann["mode_medium"] = "cannot_rate"
+        return None
 
+    # cannot_rate is a valid classification — normalise its dependent fields
     if ann["mode_medium"] == "cannot_rate":
         ann["mode_turn"] = None
         ann["field_activity"] = None
         ann["tenor_formality"] = None
         return ann
 
-    if ann.get("mode_turn") not in VALID_MODE_TURN:
+    # For rateable lines, every field must be valid and non-null
+    if ann.get("mode_turn") not in VALID_MODE_TURN or ann.get("mode_turn") is None:
         print(
-            f"  Invalid mode_turn '{ann.get('mode_turn')}' on line {ann.get('line')}, "
-            f"defaulting to monologic",
+            f"  Invalid mode_turn '{ann.get('mode_turn')}' on line {ann.get('line')}",
             file=sys.stderr,
         )
-        ann["mode_turn"] = "monologic"
+        return None
 
-    if ann.get("field_activity") not in VALID_FIELD_ACTIVITY:
+    if (
+        ann.get("field_activity") not in VALID_FIELD_ACTIVITY
+        or ann.get("field_activity") is None
+    ):
         print(
-            f"  Invalid field_activity '{ann.get('field_activity')}' on line {ann.get('line')}, "
-            f"defaulting to explaining",
+            f"  Invalid field_activity '{ann.get('field_activity')}' on line {ann.get('line')}",
             file=sys.stderr,
         )
-        ann["field_activity"] = "explaining"
+        return None
 
-    if ann.get("tenor_formality") not in VALID_TENOR_FORMALITY:
+    if (
+        ann.get("tenor_formality") not in VALID_TENOR_FORMALITY
+        or ann.get("tenor_formality") is None
+    ):
         print(
-            f"  Invalid tenor_formality '{ann.get('tenor_formality')}' on line {ann.get('line')}, "
-            f"defaulting to formal",
+            f"  Invalid tenor_formality '{ann.get('tenor_formality')}' on line {ann.get('line')}",
             file=sys.stderr,
         )
-        ann["tenor_formality"] = "formal"
-
-    # Rateable lines should not have null dependent fields
-    if ann.get("mode_turn") is None:
-        ann["mode_turn"] = "monologic"
-    if ann.get("field_activity") is None:
-        ann["field_activity"] = "explaining"
-    if ann.get("tenor_formality") is None:
-        ann["tenor_formality"] = "formal"
+        return None
 
     return ann
 
 
 def parse_lines(markdown_text):
-    """Parse '[N] content' lines into list of {num, text}."""
     if not markdown_text or not markdown_text.strip():
         return []
     lines = []
@@ -368,19 +369,15 @@ def parse_lines(markdown_text):
 
 
 def truncate(text, max_chars=MAX_LINE_CHARS):
-    if len(text) <= max_chars:
-        return text
-    return text[:max_chars] + "..."
+    return text if len(text) <= max_chars else text[:max_chars] + "..."
 
 
 def is_structural(text):
-    """Headings, tables, and code are structural — tagged locally, not by LLM."""
     t = text.strip()
     return t.startswith("# ") or t.startswith("TABLE: ") or t.startswith("CODE: ")
 
 
 def get_doc_preamble(lines, max_lines=DOC_PREAMBLE_LINES):
-    """First N non-structural lines as document-level context."""
     selected = []
     for line in lines:
         if not is_structural(line["text"]) and line["text"].strip():
@@ -391,12 +388,8 @@ def get_doc_preamble(lines, max_lines=DOC_PREAMBLE_LINES):
 
 
 def build_user_prompt(url, section, lines, chunk_start, chunk_end, doc_preamble=""):
-    """Build user message for one chunk."""
-    parts = []
-    parts.append(f"URL: {url}")
-    parts.append(f"Section: {section}")
+    parts = [f"URL: {url}", f"Section: {section}"]
 
-    # Document-level context
     if doc_preamble:
         chunk_nums = {lines[i]["num"] for i in range(chunk_start, chunk_end)}
         preamble_filtered = []
@@ -410,7 +403,6 @@ def build_user_prompt(url, section, lines, chunk_start, chunk_end, doc_preamble=
             parts.append("[DOCUMENT OPENING — for context only, do not classify]")
             parts.extend(preamble_filtered)
 
-    # Context before
     ctx_start = max(0, chunk_start - CONTEXT_LINES)
     if ctx_start < chunk_start:
         parts.append("")
@@ -418,7 +410,6 @@ def build_user_prompt(url, section, lines, chunk_start, chunk_end, doc_preamble=
         for i in range(ctx_start, chunk_start):
             parts.append(f"[{lines[i]['num']}] {truncate(lines[i]['text'])}")
 
-    # Lines to classify
     parts.append("")
     parts.append("[CLASSIFY THESE LINES]")
     for i in range(chunk_start, chunk_end):
@@ -430,7 +421,6 @@ def build_user_prompt(url, section, lines, chunk_start, chunk_end, doc_preamble=
         else:
             parts.append(f"[{lines[i]['num']}] {truncate(lines[i]['text'])}")
 
-    # Context after
     ctx_end = min(len(lines), chunk_end + CONTEXT_LINES)
     if chunk_end < ctx_end:
         parts.append("")
@@ -442,33 +432,27 @@ def build_user_prompt(url, section, lines, chunk_start, chunk_end, doc_preamble=
 
 
 def parse_json_response(text):
-    """Extract JSON array from LLM response."""
     text = text.strip()
     text = re.sub(r"^```(?:json)?\s*", "", text)
     text = re.sub(r"\s*```$", "", text)
     text = text.strip()
-
-    # Strip <think>...</think> tags some models produce
     text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
 
-    # Find the outermost JSON array
     bracket_start = text.find("[")
     if bracket_start == -1:
         raise json.JSONDecodeError("No JSON array found in response", text, 0)
 
     candidate = text[bracket_start:]
-
     try:
         return json.loads(candidate)
     except json.JSONDecodeError:
         pass
 
-    # Try to salvage truncated JSON
     last_brace = candidate.rfind("}")
     if last_brace > 0:
         truncated = candidate[: last_brace + 1]
         if not truncated.rstrip().endswith("]"):
-            truncated = truncated + "]"
+            truncated += "]"
         try:
             result = json.loads(truncated)
             print(
@@ -487,8 +471,106 @@ def parse_json_response(text):
 # ===================================================================
 
 
+class ClassificationFailed(Exception):
+    """Raised when a chunk cannot be classified after all retries."""
+
+    pass
+
+
+def classify_chunk(
+    model,
+    tokenizer,
+    url,
+    section,
+    lines,
+    chunk_start,
+    chunk_end,
+    doc_preamble,
+    verbose=False,
+):
+    """Classify one chunk. Retries up to MAX_CHUNK_RETRIES times.
+
+    Returns a dict {line_num: validated_annotation}.
+    Raises ClassificationFailed if any classifiable line still has no
+    valid annotation after all retries.
+    """
+    expected = {
+        lines[i]["num"]
+        for i in range(chunk_start, chunk_end)
+        if not is_structural(lines[i]["text"])
+    }
+    if not expected:
+        return {}
+
+    valid = {}  # line_num -> validated annotation
+
+    for attempt in range(1, MAX_CHUNK_RETRIES + 1):
+        still_needed = expected - set(valid.keys())
+        if not still_needed:
+            break
+
+        # First attempt: full chunk. Later: just the missing lines.
+        if attempt == 1:
+            p_start, p_end = chunk_start, chunk_end
+        else:
+            needed_indices = [
+                i
+                for i in range(chunk_start, chunk_end)
+                if lines[i]["num"] in still_needed
+            ]
+            p_start = needed_indices[0]
+            p_end = needed_indices[-1] + 1
+            print(
+                f"  Attempt {attempt}/{MAX_CHUNK_RETRIES} for lines "
+                f"{sorted(still_needed)}",
+                file=sys.stderr,
+            )
+
+        prompt = build_user_prompt(url, section, lines, p_start, p_end, doc_preamble)
+
+        try:
+            raw = call_llm(model, tokenizer, prompt, verbose=verbose)
+            result = parse_json_response(raw)
+        except Exception as e:
+            print(
+                f"  Attempt {attempt}/{MAX_CHUNK_RETRIES} failed: {e}",
+                file=sys.stderr,
+            )
+            continue
+
+        for ann in result:
+            line_num = ann.get("line")
+            if line_num not in still_needed:
+                continue
+
+            # Comments are never transcribed
+            if section == "comments" and ann.get("mode_medium") == "transcribed":
+                ann["mode_medium"] = "written"
+
+            checked = validate_annotation(ann)
+            if checked is not None:
+                valid[line_num] = checked
+            else:
+                print(
+                    f"  Line {line_num}: invalid annotation on attempt {attempt}",
+                    file=sys.stderr,
+                )
+
+    still_needed = expected - set(valid.keys())
+    if still_needed:
+        raise ClassificationFailed(
+            f"Lines {sorted(still_needed)} failed after {MAX_CHUNK_RETRIES} attempts"
+        )
+
+    return valid
+
+
 def classify_section(model, tokenizer, url, section, markdown_text, verbose=False):
-    """Classify all lines in one section (main or comments) of a document."""
+    """Classify all lines in one section (main or comments).
+
+    Raises ClassificationFailed if any chunk fails — the caller should
+    mark the whole document as failed.
+    """
     lines = parse_lines(markdown_text)
     if not lines:
         return []
@@ -499,7 +581,7 @@ def classify_section(model, tokenizer, url, section, markdown_text, verbose=Fals
     for chunk_start in range(0, len(lines), CHUNK_SIZE):
         chunk_end = min(chunk_start + CHUNK_SIZE, len(lines))
 
-        # Skip chunks that are entirely structural
+        # All-structural chunks: tag locally, no LLM call
         classifiable = [
             i
             for i in range(chunk_start, chunk_end)
@@ -510,83 +592,37 @@ def classify_section(model, tokenizer, url, section, markdown_text, verbose=Fals
                 ann_by_line[lines[i]["num"]] = _structural(lines[i]["num"])
             continue
 
-        prompt = build_user_prompt(
-            url, section, lines, chunk_start, chunk_end, doc_preamble
+        # This raises ClassificationFailed if retries are exhausted
+        chunk_results = classify_chunk(
+            model,
+            tokenizer,
+            url,
+            section,
+            lines,
+            chunk_start,
+            chunk_end,
+            doc_preamble,
+            verbose=verbose,
         )
-        raw = call_llm(model, tokenizer, prompt, verbose=verbose)
+        ann_by_line.update(chunk_results)
 
-        try:
-            result = parse_json_response(raw)
-        except json.JSONDecodeError as e:
-            print(f"  JSON parse error: {e}", file=sys.stderr)
-            print(f"  Raw response: {raw[:300]}", file=sys.stderr)
-            result = [
-                _cannot_rate(lines[i]["num"]) for i in range(chunk_start, chunk_end)
-            ]
-
-        for ann in result:
-            ann_by_line[ann.get("line")] = ann
-
-        # Check for missing lines and retry once
-        expected = {
-            lines[i]["num"]
-            for i in range(chunk_start, chunk_end)
-            if not is_structural(lines[i]["text"])
-        }
-        returned = {a.get("line") for a in result}
-        missing = expected - returned
-
-        if missing:
-            print(
-                f"  Retrying {len(missing)} missed lines: {sorted(missing)}",
-                file=sys.stderr,
-            )
-            missing_indices = [
-                i for i in range(chunk_start, chunk_end) if lines[i]["num"] in missing
-            ]
-            retry_start = missing_indices[0]
-            retry_end = missing_indices[-1] + 1
-            retry_prompt = build_user_prompt(
-                url, section, lines, retry_start, retry_end, doc_preamble
-            )
-            try:
-                retry_raw = call_llm(model, tokenizer, retry_prompt, verbose=verbose)
-                retry_result = parse_json_response(retry_raw)
-                for ann in retry_result:
-                    ann_by_line[ann.get("line")] = ann
-                still_missing = missing - {a.get("line") for a in retry_result}
-                if still_missing:
-                    print(
-                        f"  Still missing after retry: {sorted(still_missing)}",
-                        file=sys.stderr,
-                    )
-            except Exception as e:
-                print(f"  Retry failed: {e}", file=sys.stderr)
-
-    # Build final list
+    # Assemble final list in line order
     final = []
     for line in lines:
         if is_structural(line["text"]):
             final.append(_structural(line["num"]))
-        elif line["num"] in ann_by_line:
-            ann = ann_by_line[line["num"]]
-            if section == "comments" and ann.get("mode_medium") == "transcribed":
-                ann["mode_medium"] = "written"
-            ann = validate_annotation(ann)
-            final.append(ann)
         else:
-            final.append(_cannot_rate(line["num"]))
+            final.append(ann_by_line[line["num"]])
 
     return final
 
 
 # ===================================================================
-# FILE I/O HELPERS
+# FILE I/O
 # ===================================================================
 
 
 def count_lines(path):
-    """Count lines in a file without loading it into memory."""
     count = 0
     with open(path, "rb") as f:
         for _ in f:
@@ -595,7 +631,6 @@ def count_lines(path):
 
 
 def iter_lines(path, start, end):
-    """Yield (index, line_string) for lines [start, end) without loading all."""
     with open(path) as f:
         for i, line in enumerate(f):
             if i >= end:
@@ -613,20 +648,12 @@ def main():
     parser = argparse.ArgumentParser(
         description="Classify web document registers using a local LLM on LUMI."
     )
-    parser.add_argument("--input", required=True, help="Input JSONL file")
-    parser.add_argument("--output", required=True, help="Output JSONL file")
-    parser.add_argument(
-        "--model-id", default=DEFAULT_MODEL_ID, help="HuggingFace model ID"
-    )
-    parser.add_argument(
-        "--max-docs", type=int, default=None, help="Max docs to process"
-    )
-    parser.add_argument(
-        "--start-from", type=int, default=0, help="Resume from this doc index"
-    )
-    parser.add_argument(
-        "--verbose-prompts", action="store_true", help="Print prompts to stderr"
-    )
+    parser.add_argument("--input", required=True)
+    parser.add_argument("--output", required=True)
+    parser.add_argument("--model-id", default=DEFAULT_MODEL_ID)
+    parser.add_argument("--max-docs", type=int, default=None)
+    parser.add_argument("--start-from", type=int, default=0)
+    parser.add_argument("--verbose-prompts", action="store_true")
     args = parser.parse_args()
 
     # --- Load model ---
@@ -654,12 +681,14 @@ def main():
 
     # --- Process documents ---
     t_start = time.time()
+    n_failed = 0
 
     with open(args.output, "a") as fout:
         for idx, raw_line in iter_lines(args.input, start, end):
             doc_start = time.time()
             row = json.loads(raw_line)
             url = row.get("u", "")
+            failed = False
 
             try:
                 main_ann = classify_section(
@@ -670,27 +699,52 @@ def main():
                     row.get("markdown_main", ""),
                     verbose=args.verbose_prompts,
                 )
+            except ClassificationFailed as e:
+                print(f"  SKIPPING doc [{idx}]: main section: {e}", file=sys.stderr)
+                failed = True
             except Exception as e:
-                print(f"  FAILED main: {e}", file=sys.stderr)
-                main_ann = []
-
-            try:
-                comments_ann = classify_section(
-                    model,
-                    tokenizer,
-                    url,
-                    "comments",
-                    row.get("markdown_comments", ""),
-                    verbose=args.verbose_prompts,
+                print(
+                    f"  SKIPPING doc [{idx}]: unexpected error in main: {e}",
+                    file=sys.stderr,
                 )
-            except Exception as e:
-                print(f"  FAILED comments: {e}", file=sys.stderr)
-                comments_ann = []
+                failed = True
 
-            row["llm_register_annotation"] = {
-                "main": main_ann,
-                "comments": comments_ann,
-            }
+            if not failed:
+                try:
+                    comments_ann = classify_section(
+                        model,
+                        tokenizer,
+                        url,
+                        "comments",
+                        row.get("markdown_comments", ""),
+                        verbose=args.verbose_prompts,
+                    )
+                except ClassificationFailed as e:
+                    print(
+                        f"  SKIPPING doc [{idx}]: comments section: {e}",
+                        file=sys.stderr,
+                    )
+                    failed = True
+                except Exception as e:
+                    print(
+                        f"  SKIPPING doc [{idx}]: unexpected error in comments: {e}",
+                        file=sys.stderr,
+                    )
+                    failed = True
+
+            if failed:
+                # Write the doc with a failure marker so:
+                # 1. Resume indexing stays correct (one output line per input line)
+                # 2. You can find and retry these later with:
+                #    jq 'select(.classification_failed)' output.jsonl
+                row["classification_failed"] = True
+                row["llm_register_annotation"] = None
+                n_failed += 1
+            else:
+                row["llm_register_annotation"] = {
+                    "main": main_ann,
+                    "comments": comments_ann,
+                }
 
             fout.write(json.dumps(row, ensure_ascii=False) + "\n")
             fout.flush()
@@ -700,16 +754,22 @@ def main():
             elapsed = time.time() - t_start
             avg = elapsed / done
             remaining = (end - start - done) * avg
+            status = "FAILED" if failed else "ok"
             print(
-                f"[{idx}] {doc_time:.1f}s | {done}/{end - start} | "
+                f"[{idx}] {doc_time:.1f}s {status} | {done}/{end - start} | "
                 f"avg {avg:.1f}s/doc | ETA {remaining / 60:.0f}min | {url[:60]}"
             )
 
     total_time = time.time() - t_start
     print(
-        f"Done. {end - start} docs in {total_time / 60:.1f} min "
+        f"\nDone. {end - start} docs in {total_time / 60:.1f} min "
         f"({total_time / (end - start):.1f}s/doc avg)"
     )
+    if n_failed:
+        print(
+            f"{n_failed} docs failed classification. "
+            f"Find them with: jq 'select(.classification_failed)' {args.output}"
+        )
 
 
 if __name__ == "__main__":
