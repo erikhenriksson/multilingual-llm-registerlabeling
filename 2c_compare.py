@@ -209,13 +209,15 @@ def main():
             # Get the text for this line
             line_texts = extract_line_texts(docs1[url], section)
             text = line_texts.get(line_num, "<text not found>")
-            if len(text) > 120:
-                text = text[:120] + "..."
+            if len(text) > 500:
+                text = text[:500] + "..."
 
             print(f"\n  URL: {url[:80]}")
             print(f"  [{section}] line {line_num}: {text}")
             for d in disags:
-                print(f"    {d['field']:<20} file1={d['file1']:<14} file2={d['file2']}")
+                v1 = str(d["file1"]) if d["file1"] is not None else "null"
+                v2 = str(d["file2"]) if d["file2"] is not None else "null"
+                print(f"    {d['field']:<20} file1={v1:<14} file2={v2}")
             print()
 
 
