@@ -10,6 +10,8 @@ Usage:
 
 import argparse
 import json
+import random
+import re
 import sys
 from collections import Counter
 
@@ -26,6 +28,21 @@ def load_docs(path, max_docs):
                 continue
             docs[url] = row
     return docs
+
+
+def extract_line_texts(doc, section):
+    """Parse [N] text lines from markdown_main or markdown_comments.
+
+    Returns {line_num: text_string}.
+    """
+    key = "markdown_main" if section == "main" else "markdown_comments"
+    md = doc.get(key, "") or ""
+    texts = {}
+    for raw in md.split("\n"):
+        m = re.match(r"\[(\d+)\]\s*(.*)", raw)
+        if m:
+            texts[int(m.group(1))] = m.group(2)
+    return texts
 
 
 def compare_annotations(ann1, ann2):
@@ -74,10 +91,15 @@ def main():
     parser.add_argument("file2")
     parser.add_argument("--max-docs", type=int, default=5000)
     parser.add_argument(
-        "--show-disagreements",
+        "--show-examples",
         type=int,
         default=20,
-        help="Print first N disagreements (default: 20, 0=none)",
+        help="Print N lines with disagreements showing text (default: 20)",
+    )
+    parser.add_argument(
+        "--random-examples",
+        action="store_true",
+        help="Randomly sample examples instead of first N",
     )
     args = parser.parse_args()
 
@@ -163,15 +185,38 @@ def main():
         for (v1, v2), count in top:
             print(f"    {v1} vs {v2}: {count}")
 
-    # Sample disagreements
-    if args.show_disagreements and all_disagreements:
-        n = min(args.show_disagreements, len(all_disagreements))
-        print(f"\nFirst {n} disagreements:")
-        for d in all_disagreements[:n]:
-            print(
-                f"  [{d['section']}] line {d['line']} | {d['field']}: "
-                f"{d['file1']} vs {d['file2']} | {d['url'][:60]}"
-            )
+    # --- Examples with text ---
+    if args.show_examples and all_disagreements:
+        # Group disagreements by (url, section, line) so we show each line once
+        from collections import defaultdict
+
+        by_line = defaultdict(list)
+        for d in all_disagreements:
+            by_line[(d["url"], d["section"], d["line"])].append(d)
+
+        keys = list(by_line.keys())
+        if args.random_examples:
+            random.shuffle(keys)
+
+        n = min(args.show_examples, len(keys))
+        print(f"\n{'=' * 70}")
+        print(f"EXAMPLES ({n} lines with disagreements)")
+        print(f"{'=' * 70}")
+
+        for url, section, line_num in keys[:n]:
+            disags = by_line[(url, section, line_num)]
+
+            # Get the text for this line
+            line_texts = extract_line_texts(docs1[url], section)
+            text = line_texts.get(line_num, "<text not found>")
+            if len(text) > 120:
+                text = text[:120] + "..."
+
+            print(f"\n  URL: {url[:80]}")
+            print(f"  [{section}] line {line_num}: {text}")
+            for d in disags:
+                print(f"    {d['field']:<20} file1={d['file1']:<14} file2={d['file2']}")
+            print()
 
 
 if __name__ == "__main__":
