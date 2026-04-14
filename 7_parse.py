@@ -29,6 +29,7 @@ log = logging.getLogger(__name__)
 # ── Map your filename prefixes to Stanza language codes ──────────────────────
 LANG_MAP = {
     "cmn_Hant": "zh-hant",
+    "cmn_Hans": "zh-hans",
     "eng_Latn": "en",
     "swe_Latn": "sv",
     "pes_Arab": "fa",
