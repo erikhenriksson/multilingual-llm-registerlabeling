@@ -29,6 +29,19 @@
     --amber-border: rgba(212, 168, 67, 0.45);
     --purple: #a78bfa;
     --cyan: #67d4e2;
+    /* per-dimension colors */
+    --dim0: #6ea1f7;               /* medium — blue */
+    --dim0-soft: rgba(110, 161, 247, 0.12);
+    --dim0-med: rgba(110, 161, 247, 0.25);
+    --dim1: #a78bfa;               /* turn — purple */
+    --dim1-soft: rgba(167, 139, 250, 0.12);
+    --dim1-med: rgba(167, 139, 250, 0.25);
+    --dim2: #d4a843;               /* activity — amber */
+    --dim2-soft: rgba(212, 168, 67, 0.12);
+    --dim2-med: rgba(212, 168, 67, 0.25);
+    --dim3: #5cb87a;               /* formality — green */
+    --dim3-soft: rgba(92, 184, 122, 0.12);
+    --dim3-med: rgba(92, 184, 122, 0.25);
     --font: 'DM Sans', -apple-system, sans-serif;
     --mono: 'DM Mono', 'Menlo', monospace;
   }
@@ -108,13 +121,15 @@
   }
 
   .llm-row {
-    padding: 5px 16px; background: var(--amber-soft); border-bottom: 1px solid var(--border);
+    padding: 5px 16px; background: var(--surface2); border-bottom: 1px solid var(--border);
     font: 500 10px/1.4 var(--mono); display: flex; gap: 7px; align-items: center; flex-wrap: wrap;
   }
-  .llm-label { color: var(--amber); font-weight: 700; }
+  .llm-label { color: var(--text-dim); font-weight: 700; }
   .llm-chip {
     display: inline-block; padding: 1px 7px; border-radius: 3px;
-    border: 1px solid var(--amber-border); color: var(--amber); font-size: 10px;
+    border: 1px solid; border-color: var(--border-focus);
+    border-color: color-mix(in srgb, var(--chip-c) 45%, transparent);
+    color: var(--chip-c); font-size: 10px;
   }
 
   /* ─── Lines ─── */
@@ -131,13 +146,19 @@
 
   /* ─── Annotation groups ─── */
   .ann-area { padding: 14px 16px 10px; }
-  .grp { margin-bottom: 12px; }
+  .grp { margin-bottom: 12px; --dc: var(--accent); --dc-soft: var(--accent-soft); --dc-med: var(--accent-med); }
   .grp:last-child { margin-bottom: 0; }
+  .grp[data-dim="0"] { --dc: var(--dim0); --dc-soft: var(--dim0-soft); --dc-med: var(--dim0-med); }
+  .grp[data-dim="1"] { --dc: var(--dim1); --dc-soft: var(--dim1-soft); --dc-med: var(--dim1-med); }
+  .grp[data-dim="2"] { --dc: var(--dim2); --dc-soft: var(--dim2-soft); --dc-med: var(--dim2-med); }
+  .grp[data-dim="3"] { --dc: var(--dim3); --dc-soft: var(--dim3-soft); --dc-med: var(--dim3-med); }
   .grp-label {
     font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px;
-    color: var(--text-dim); margin-bottom: 5px;
+    color: var(--dc); margin-bottom: 5px; opacity: 0.55; transition: opacity 0.15s;
   }
-  .grp-label .grp-focus { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); margin-left: 5px; vertical-align: middle; opacity: 0; transition: opacity 0.15s; }
+  .grp.active .grp-label { opacity: 1; }
+  .grp.disabled .grp-label { opacity: 0.22; }
+  .grp-label .grp-focus { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--dc); margin-left: 5px; vertical-align: middle; opacity: 0; transition: opacity 0.15s; }
   .grp.active .grp-focus { opacity: 1; }
   .grp.disabled { opacity: 0.22; pointer-events: none; }
   .opts { display: flex; gap: 5px; flex-wrap: wrap; }
@@ -148,13 +169,13 @@
     font-size: 11.5px; cursor: pointer; transition: all 0.12s; position: relative;
   }
   .opt:hover { border-color: var(--border-focus); }
-  .opt.sel { background: var(--accent-med); border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .opt.sel { background: var(--dc-med); border-color: var(--dc); color: var(--dc); font-weight: 700; }
   .opt .key {
     display: inline-block; font: 500 9px var(--mono); color: var(--text-faint);
     border: 1px solid var(--border); border-radius: 2px; padding: 0 3px; margin-right: 4px;
     vertical-align: middle;
   }
-  .opt.sel .key { color: var(--accent); border-color: var(--accent); }
+  .opt.sel .key { color: var(--dc); border-color: var(--dc); }
   .opt.llm { box-shadow: inset 0 -2px 0 0 var(--amber); }
 
   .kbd-hint {
@@ -179,6 +200,7 @@
   .guide-section h3 { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-dim); margin-bottom: 6px; }
   .guide-section p { margin-bottom: 4px; }
   .guide-section b { color: var(--accent); font-weight: 600; }
+  .guide-note { color: var(--cyan); font-weight: 500; font-size: 11px; }
 
   /* ─── Done ─── */
   .done-screen { text-align: center; padding: 80px 20px; display: none; }
@@ -247,31 +269,40 @@
 
     <div class="guide" id="el-guide">
       <div class="card">
+
         <div class="guide-section">
-          <h3>mode_medium — How was the text produced?</h3>
-          <p><b>written</b> — Composed as written text. Default for web content. Informal writing is still "written."</p>
-          <p><b>transcribed</b> — Originally spoken, then written down. Requires clear evidence: transcript labels, speaker turns ("Q:", "Interviewer:"), text from a speech/podcast/interview. Conversational tone alone is NOT enough.</p>
-          <p><b>cannot_rate</b> — (1) Machine-generated, boilerplate, navigational, or structural content (cookie notices, footers, breadcrumbs, metadata, share buttons). (2) Not a complete sentence or coherent phrase.</p>
+          <h3>Medium</h3>
+          <p><b>written</b> — composed as text.</p>
+          <p><b>transcribed</b> — originally spoken, then written down.</p>
+          <p><b>cannot_rate</b> — boilerplate, nav, structural, metadata, fragments, or garbled text.</p>
         </div>
+
         <div class="guide-section">
-          <h3>mode_turn — Monologic or dialogic?</h3>
-          <p><b>monologic</b> — One author addressing a general audience: articles, blog posts, encyclopedias, guides. Editorially structured Q&A (FAQ pages, how-to sites) is monologic — it's reference content, not real conversation.</p>
-          <p><b>dialogic</b> — Participatory context where responses are expected: forum threads, comment sections, social media, chat, interviews with alternating speakers.</p>
+          <h3>Turn</h3>
+          <p><b>monologic</b> — one author → general audience. FAQ/how-to = monologic.</p>
+          <p><b>dialogic</b> — participatory: forums, comments, social media, chat, interviews.</p>
         </div>
+
         <div class="guide-section">
-          <h3>field_activity — What is the text doing?</h3>
-          <p><b>recounting</b> — Reporting specific events in temporal sequence. Requires events presented as having happened.</p>
-          <p><b>explaining</b> — Presenting factual information, concepts, general knowledge. Residual category — use only when nothing more specific applies.</p>
-          <p><b>directing</b> — Telling the reader how to do something: tutorials, recipes, instructions.</p>
-          <p><b>evaluating</b> — Subjective views, arguments, complaints, praise, commentary. Includes "Thanks!", "Great post!" If text argues what <i>should</i> be done, it's evaluating.</p>
-          <p><b>promoting</b> — Selling, advertising, marketing. When an org describes its own services, that's promoting even if the surface text sounds neutral.</p>
-          <p><b>creating</b> — Poetry, song lyrics, verse, artistic literary expression.</p>
+          <h3>Activity</h3>
+          <p><b>explaining</b> — factual info, concepts, reference material.</p>
+          <p><b>recounting</b> — narrating specific events in sequence.</p>
+          <p><b>directing</b> — how-to: tutorials, recipes, instructions, troubleshooting.</p>
+          <p><b>evaluating</b> — opinions, arguments, praise, complaints, "should"-statements.</p>
+          <p><b>promoting</b> — marketing by or for the entity described. Org describing own services = promoting.</p>
+          <p><b>creating</b> — poetry, lyrics, verse, scripture/hymns.</p>
         </div>
+
         <div class="guide-section">
-          <h3>tenor_formality — Register formality</h3>
-          <p><b>formal</b> — Institutional, professional, or academic. Complex syntax, specialized vocabulary, impersonal constructions, no contractions.</p>
-          <p><b>informal</b> — Casual, conversational, personal. Contractions, colloquialisms, first-person, simple syntax, slang.</p>
+          <h3>Formality</h3>
+          <p><b>formal</b> — social distance, institutional audience.</p>
+          <p><b>informal</b> — reduced distance: colloquial vocab, in-group references, casual stance.</p>
         </div>
+
+        <div class="guide-section" style="padding:8px 16px;">
+          <p style="color:var(--text-dim);font-size:11px;">Use context when ambiguous. Keep labels consistent within coherent sections — only shift for genuine transitions (e.g. article → comments).</p>
+        </div>
+
       </div>
     </div>
   </div>
@@ -306,6 +337,20 @@ let results = {};   // task_id → { mode_medium, mode_turn, field_activity, ten
 let idx = 0;
 let who = "";
 let focusDim = 0;   // which dimension group has keyboard focus
+let fileFingerprint = "";  // content-based hash of the loaded file
+let touched = new Set();   // task_ids the annotator has actually confirmed
+
+/* ═══════════════════════════════════════════════════════════════
+   File fingerprinting — ensures different files get separate
+   localStorage entries even if they produce the same task count.
+   ═══════════════════════════════════════════════════════════════ */
+function computeFingerprint(text) {
+  let h = 5381;
+  for (let i = 0; i < text.length; i++) {
+    h = ((h << 5) + h + text.charCodeAt(i)) | 0;
+  }
+  return text.length.toString(36) + "_" + (h >>> 0).toString(36);
+}
 
 /* ═══════════════════════════════════════════════════════════════
    JSONL → tasks (in-browser extraction)
@@ -385,19 +430,21 @@ function jsonlToTasks(text) {
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   Persistence
+   Persistence — keyed by annotator + file fingerprint
    ═══════════════════════════════════════════════════════════════ */
-function skey() { return "reg4_" + who; }
+function skey() { return "reg4_" + who + "_" + fileFingerprint; }
 
 function autosave() {
-  try { localStorage.setItem(skey(), JSON.stringify({ who, idx, results, ids: tasks.map(t=>t.task_id) })); } catch(e) {}
+  try { localStorage.setItem(skey(), JSON.stringify({ who, idx, results, fingerprint: fileFingerprint, touched: [...touched] })); } catch(e) {}
 }
 
 function tryResume() {
   try {
     const s = JSON.parse(localStorage.getItem(skey()));
-    if (!s || JSON.stringify(s.ids) !== JSON.stringify(tasks.map(t=>t.task_id))) return false;
-    results = s.results; idx = s.idx; return true;
+    if (!s || s.fingerprint !== fileFingerprint) return false;
+    results = s.results; idx = s.idx;
+    touched = new Set(s.touched || []);
+    return true;
   } catch(e) { return false; }
 }
 
@@ -417,6 +464,7 @@ function doLoad() {
   reader.onload = e => {
     try {
       const text = e.target.result.trim();
+      fileFingerprint = computeFingerprint(text);
       tasks = text.startsWith("[") ? JSON.parse(text) : jsonlToTasks(text);
       errEl.textContent = "";
       if (!tasks.length) { errEl.textContent = "No classifiable segments found."; return; }
@@ -458,6 +506,7 @@ function esc(s) { const d = document.createElement("div"); d.textContent = s; re
 function agreement() {
   let ag = 0, dis = 0;
   for (const t of tasks) {
+    if (!touched.has(t.task_id)) continue;
     const r = results[t.task_id];
     if (!r || r.mode_medium === null || !t.llm) continue;
     const match = DIMS.every(d => r[d.key] === (t.llm[d.key] ?? null));
@@ -469,7 +518,7 @@ function agreement() {
 function render() {
   const t = tasks[idx];
   const r = results[t.task_id];
-  const answered = Object.values(results).filter(r => r.mode_medium !== null).length;
+  const answered = touched.size;
 
   // Progress
   document.getElementById("el-prog").textContent = `${answered}/${tasks.length}`;
@@ -494,7 +543,7 @@ function render() {
   // LLM row
   const llmEl = document.getElementById("el-llm");
   if (t.llm && t.llm.mode_medium) {
-    let chips = DIMS.map(d => t.llm[d.key] ? `<span class="llm-chip">${t.llm[d.key]}</span>` : "").join(" ");
+    let chips = DIMS.map((d, di) => t.llm[d.key] ? `<span class="llm-chip" style="--chip-c:var(--dim${di})">${t.llm[d.key]}</span>` : "").join(" ");
     llmEl.innerHTML = `<span class="llm-label">LLM</span> ${chips}`;
     llmEl.style.display = "flex";
   } else {
@@ -523,7 +572,7 @@ function render() {
     const d = DIMS[gi];
     const gated = d.gate && !d.gate(medium);
     const active = gi === focusDim;
-    ah += `<div class="grp ${gated ? "disabled" : ""} ${active ? "active" : ""}" data-gi="${gi}">`;
+    ah += `<div class="grp ${gated ? "disabled" : ""} ${active ? "active" : ""}" data-gi="${gi}" data-dim="${gi}">`;
     ah += `<div class="grp-label">${d.label} <span class="grp-focus"></span></div>`;
     ah += `<div class="opts">`;
     for (let oi = 0; oi < d.opts.length; oi++) {
@@ -565,6 +614,7 @@ function pick(gi, oi) {
   const val = d.opts[oi];
 
   r[d.key] = val;
+  touched.add(t.task_id);
 
   // If medium → cannot_rate, null out dependent fields
   if (d.key === "mode_medium" && val === "cannot_rate") {
@@ -587,6 +637,10 @@ function pick(gi, oi) {
 }
 
 function go(dir) {
+  // Mark current task as reviewed when navigating away
+  touched.add(tasks[idx].task_id);
+  autosave();
+
   const next = idx + dir;
   if (next < 0 || next >= tasks.length) {
     if (dir > 0 && idx === tasks.length - 1) {
@@ -604,7 +658,8 @@ function go(dir) {
 
 function toggleGuide() {
   const el = document.getElementById("el-guide");
-  el.style.display = el.style.display === "none" ? "block" : "none";
+  const hidden = getComputedStyle(el).display === "none";
+  el.style.display = hidden ? "block" : "none";
 }
 
 /* ═══════════════════════════════════════════════════════════════

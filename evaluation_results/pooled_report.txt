@@ -1,0 +1,112 @@
+======================================================================
+POOLED ACROSS ALL LANGUAGES (4 languages)
+======================================================================
+
+MEAN OVERALL ACCURACY (avg of per-language facet accuracies): 0.911 (std=0.024)
+MEAN CORE REGISTER ACCURACY (avg of per-language): 0.776 (std=0.047)
+
+
+--- mode_medium (n=850, accuracy=0.885) ---
+              precision    recall  f1-score   support
+
+ cannot_rate       0.98      0.64      0.78       238
+ transcribed       0.76      0.68      0.72        19
+     written       0.87      0.99      0.92       593
+
+    accuracy                           0.88       850
+   macro avg       0.87      0.77      0.81       850
+weighted avg       0.90      0.88      0.88       850
+
+Confusion Matrix (rows=human, cols=LLM):
+                 cannot_rate    transcribed        written
+  cannot_rate            153              0             85
+  transcribed              0             13              6
+      written              3              4            586
+
+
+--- mode_turn (n=602, accuracy=0.968) ---
+              precision    recall  f1-score   support
+
+    dialogic       0.82      0.91      0.86        64
+   monologic       0.99      0.98      0.98       538
+
+    accuracy                           0.97       602
+   macro avg       0.90      0.94      0.92       602
+weighted avg       0.97      0.97      0.97       602
+
+Confusion Matrix (rows=human, cols=LLM):
+                dialogic    monologic
+   dialogic           58            6
+  monologic           13          525
+
+
+--- field_activity (n=604, accuracy=0.833) ---
+              precision    recall  f1-score   support
+
+    creating       1.00      0.58      0.74        24
+   directing       0.74      0.93      0.83        46
+  evaluating       0.77      0.85      0.81        87
+  explaining       0.80      0.93      0.86       215
+   promoting       0.92      0.86      0.89        88
+  recounting       0.93      0.67      0.78       144
+
+    accuracy                           0.83       604
+   macro avg       0.86      0.81      0.82       604
+weighted avg       0.85      0.83      0.83       604
+
+Confusion Matrix (rows=human, cols=LLM):
+                  creating     directing    evaluating    explaining     promoting    recounting
+    creating            14             0             6             2             0             2
+   directing             0            43             1             2             0             0
+  evaluating             0             3            74             7             0             3
+  explaining             0             7             2           199             5             2
+   promoting             0             4             1             7            76             0
+  recounting             0             1            12            32             2            97
+
+
+--- tenor_formality (n=603, accuracy=0.968) ---
+              precision    recall  f1-score   support
+
+      formal       0.98      0.98      0.98       492
+    informal       0.90      0.93      0.92       111
+
+    accuracy                           0.97       603
+   macro avg       0.94      0.95      0.95       603
+weighted avg       0.97      0.97      0.97       603
+
+Confusion Matrix (rows=human, cols=LLM):
+                formal    informal
+    formal         481          11
+  informal           8         103
+
+
+======================================================================
+DERIVED CORE REGISTER - POOLED (n=845, accuracy=0.774)
+======================================================================
+                               precision    recall  f1-score   support
+
+                  Cannot rate       0.98      0.64      0.78       238
+             How-to/instruct.       0.75      0.93      0.83        42
+Info. description/explanation       0.66      0.92      0.77       203
+             Info. persuasion       0.69      0.85      0.76        87
+       Interactive Discussion       0.84      0.90      0.87        58
+                      Lyrical       0.92      0.55      0.69        22
+                    Narrative       0.88      0.67      0.76       129
+                      Opinion       0.66      0.81      0.72        47
+                       Spoken       0.76      0.68      0.72        19
+
+                     accuracy                           0.77       845
+                    macro avg       0.79      0.77      0.77       845
+                 weighted avg       0.81      0.77      0.77       845
+
+Confusion Matrix (rows=human, cols=LLM):
+                                                     Cannot rate                 How-to/instruct.    Info. description/explanation                 Info. persuasion           Interactive Discussion                          Lyrical                        Narrative                          Opinion                           Spoken
+                    Cannot rate                              153                                2                               48                               25                                1                                1                                4                                4                                0
+               How-to/instruct.                                0                               39                                2                                0                                0                                0                                0                                1                                0
+  Info. description/explanation                                3                                6                              187                                4                                1                                0                                1                                1                                0
+               Info. persuasion                                0                                4                                7                               74                                1                                0                                0                                1                                0
+         Interactive Discussion                                0                                0                                0                                2                               52                                0                                1                                2                                1
+                        Lyrical                                0                                0                                1                                0                                2                               12                                2                                4                                1
+                      Narrative                                0                                0                               30                                2                                4                                0                               86                                5                                2
+                        Opinion                                0                                1                                5                                0                                1                                0                                2                               38                                0
+                         Spoken                                0                                0                                2                                0                                0                                0                                2                                2                               13
