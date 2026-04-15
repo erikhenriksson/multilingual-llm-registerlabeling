@@ -13,7 +13,6 @@ Output: parses/{lang}_{script}_parsed.jsonl
 import argparse
 import json
 import logging
-import os
 import sys
 from pathlib import Path
 
@@ -31,7 +30,7 @@ LANG_MAP = {
     "cmn_Hant": "zh",
     "cmn_Hans": "zh",
     "eng_Latn": "en",
-    "swe_Latn": "sw",
+    "swe_Latn": "sv",
     "pes_Arab": "fa",
     "fin_Latn": "fi",
 }
@@ -54,14 +53,12 @@ def download_models(lang_codes: list[str]):
         stanza.download(code, logging_level="WARNING")
 
 
-def build_pipeline(lang_code: str) -> stanza.Pipeline:
-    processors = "tokenize,mwt,pos,lemma,depparse"
+def build_pipeline(lang_code: str, use_gpu: bool = True) -> stanza.Pipeline:
     log.info(f"Building pipeline for: {lang_code}")
     return stanza.Pipeline(
         lang=lang_code,
-        processors=processors,
         logging_level="WARNING",
-        use_gpu=True,
+        use_gpu=use_gpu,
     )
 
 
@@ -221,7 +218,7 @@ def main():
             sys.exit(1)
         file_lang_pairs.append((f, lang_code))
 
-    log.info(f"Files to process:")
+    log.info("Files to process:")
     for f, lc in file_lang_pairs:
         log.info(f"  {f.name} → Stanza lang: {lc}")
 
@@ -232,15 +229,7 @@ def main():
 
     for input_path, lang_code in file_lang_pairs:
         if lang_code not in pipelines:
-            if args.cpu:
-                pipelines[lang_code] = stanza.Pipeline(
-                    lang=lang_code,
-                    processors="tokenize,mwt,pos,lemma,depparse",
-                    logging_level="WARNING",
-                    use_gpu=False,
-                )
-            else:
-                pipelines[lang_code] = build_pipeline(lang_code)
+            pipelines[lang_code] = build_pipeline(lang_code, use_gpu=not args.cpu)
 
         out_name = input_path.stem.replace("_annotated", "_parsed") + ".jsonl"
         output_path = output_dir / out_name
