@@ -31,7 +31,7 @@ LANG_MAP = {
     "cmn_Hant": "zh-hant",
     "cmn_Hans": "zh-hans",
     "eng_Latn": "en",
-    "swe_Latn": "sv",
+    "swe_Latn": "sw",
     "pes_Arab": "fa",
     "fin_Latn": "fi",
 }
