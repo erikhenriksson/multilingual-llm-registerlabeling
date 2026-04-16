@@ -65,11 +65,24 @@ def plot_dimension(
     all_data: list of (lang_key, scores_df) tuples
     """
     # Compute mean factor score per (language, register)
+    # Z-score normalize within each language first, so all languages
+    # are on the same scale (mean=0, sd=1 within each language).
+    # This makes the plot show relative register positions, not absolute
+    # factor scores which are incommensurable across languages.
     records = []
     for lang, scores in all_data:
         if factor not in scores.columns:
             log.warning(f"  {lang}: {factor} not found, skipping")
             continue
+        # Normalize within this language
+        lang_mean = scores[factor].mean()
+        lang_sd = scores[factor].std()
+        if lang_sd == 0:
+            log.warning(f"  {lang}: zero variance on {factor}, skipping")
+            continue
+        scores = scores.copy()
+        scores[factor] = (scores[factor] - lang_mean) / lang_sd
+
         for lbl, grp in scores.groupby("label"):
             n = len(grp)
             mean = grp[factor].mean()
@@ -172,7 +185,9 @@ def plot_dimension(
     ax.set_ylim(-0.6, n_regs - 0.4)
 
     # X axis
-    ax.set_xlabel(f"{factor} score (mean)", fontsize=16, fontweight="bold")
+    ax.set_xlabel(
+        f"{factor} score (z-normalized within language)", fontsize=14, fontweight="bold"
+    )
     ax.tick_params(axis="x", labelsize=12)
 
     ax.set_title(f"Register means on {factor} across languages", fontsize=18, pad=14)
