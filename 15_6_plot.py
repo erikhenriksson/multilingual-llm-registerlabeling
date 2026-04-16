@@ -138,12 +138,15 @@ def plot_factor_pair(
         from adjustText import adjust_text
 
         texts = []
+        # Collect point positions so adjustText avoids them
+        x_points = [d["mx"] for d in plot_data]
+        y_points = [d["my"] for d in plot_data]
         for d in plot_data:
             t = ax.text(
                 d["mx"],
                 d["my"],
                 f"  {d['label']}",
-                fontsize=9,
+                fontsize=12,
                 fontweight="bold",
                 color=colors[d["label"]],
                 va="center",
@@ -152,29 +155,34 @@ def plot_factor_pair(
             texts.append(t)
         adjust_text(
             texts,
+            x=x_points,
+            y=y_points,
             ax=ax,
-            arrowprops=dict(arrowstyle="-", color="grey", lw=0.5),
-            expand=(1.5, 1.5),
+            arrowprops=dict(arrowstyle="-", color="grey", lw=0.8),
+            expand=(2.0, 2.0),
+            force_text=(1.5, 1.5),
+            force_points=(2.0, 2.0),
         )
     except ImportError:
-        # Stagger labels to reduce overlap
-        # Sort by y then alternate left/right
+        # Fallback: place labels above or below the point, offset enough
+        # to clear the error bars
         sorted_data = sorted(plot_data, key=lambda d: d["my"], reverse=True)
         for i, d in enumerate(sorted_data):
-            ha = "left" if i % 2 == 0 else "right"
-            offset_x = 12 if ha == "left" else -12
+            # Alternate above/below, offset vertically to avoid error bars
+            above = i % 2 == 0
+            oy = 18 if above else -18
             ax.annotate(
                 d["label"],
                 (d["mx"], d["my"]),
                 textcoords="offset points",
-                xytext=(offset_x, 0),
-                fontsize=9,
+                xytext=(0, oy),
+                fontsize=12,
                 fontweight="bold",
                 color=colors[d["label"]],
-                va="center",
-                ha=ha,
+                va="bottom" if above else "top",
+                ha="center",
                 zorder=12,
-                arrowprops=dict(arrowstyle="-", color="grey", lw=0.5),
+                arrowprops=dict(arrowstyle="-", color="grey", lw=0.8),
             )
 
     # Axis lines at zero
@@ -184,17 +192,18 @@ def plot_factor_pair(
     # Light grid
     ax.grid(True, alpha=0.15, linestyle="-")
 
-    ax.set_xlabel(fx, fontsize=13, fontweight="bold")
-    ax.set_ylabel(fy, fontsize=13, fontweight="bold")
-    ax.set_title(f"{title_prefix}: {fx} vs {fy}", fontsize=14, pad=12)
+    ax.set_xlabel(fx, fontsize=16, fontweight="bold")
+    ax.set_ylabel(fy, fontsize=16, fontweight="bold")
+    ax.set_title(f"{title_prefix}: {fx} vs {fy}", fontsize=18, pad=14)
+    ax.tick_params(labelsize=12)
 
     # Pad axes slightly beyond data range
     all_x = [d["mx"] for d in plot_data]
     all_y = [d["my"] for d in plot_data]
     x_range = max(all_x) - min(all_x) or 1
     y_range = max(all_y) - min(all_y) or 1
-    pad_x = x_range * 0.35
-    pad_y = y_range * 0.35
+    pad_x = x_range * 0.45
+    pad_y = y_range * 0.45
     ax.set_xlim(min(all_x) - pad_x, max(all_x) + pad_x)
     ax.set_ylim(min(all_y) - pad_y, max(all_y) + pad_y)
 
