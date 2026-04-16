@@ -30,16 +30,16 @@ log = logging.getLogger(__name__)
 
 # ── Visual encoding ──────────────────────────────────────────────────────────
 LANG_STYLES = {
-    "eng_Latn": {"marker": "o", "color": "#4363d8", "name": "English"},
-    "cmn": {"marker": "s", "color": "#e6194b", "name": "Mandarin"},
-    "fin_Latn": {"marker": "D", "color": "#3cb44b", "name": "Finnish"},
-    "swe_Latn": {"marker": "^", "color": "#f58231", "name": "Swedish"},
-    "pes_Arab": {"marker": "v", "color": "#911eb4", "name": "Persian"},
+    "eng_Latn": {"color": "#4363d8", "name": "English"},
+    "cmn": {"color": "#e6194b", "name": "Mandarin"},
+    "fin_Latn": {"color": "#3cb44b", "name": "Finnish"},
+    "swe_Latn": {"color": "#f58231", "name": "Swedish"},
+    "pes_Arab": {"color": "#911eb4", "name": "Persian"},
 }
 FALLBACK_STYLES = [
-    {"marker": "P", "color": "#469990", "name": None},
-    {"marker": "*", "color": "#800000", "name": None},
-    {"marker": "h", "color": "#808000", "name": None},
+    {"color": "#469990", "name": None},
+    {"color": "#800000", "name": None},
+    {"color": "#808000", "name": None},
 ]
 
 
@@ -170,7 +170,7 @@ def plot_dimension(
         ax.scatter(
             xs,
             ys,
-            marker=style["marker"],
+            marker="o",
             c=style["color"],
             s=100,
             edgecolors="white",
