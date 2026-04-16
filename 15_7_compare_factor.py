@@ -53,6 +53,13 @@ def get_lang_style(lang, _idx=[0]):
     return style
 
 
+def display_name(factor):
+    """Convert 'F1' to 'Dimension 1' for plot labels."""
+    if factor.startswith("F") and factor[1:].isdigit():
+        return f"Dimension {factor[1:]}"
+    return factor
+
+
 def plot_dimension(
     all_data,
     factor,
@@ -185,12 +192,13 @@ def plot_dimension(
     ax.set_ylim(-0.6, n_regs - 0.4)
 
     # X axis
+    dim = display_name(factor)
     ax.set_xlabel(
-        f"{factor} score (z-normalized within language)", fontsize=14, fontweight="bold"
+        f"{dim} score (z-normalized within language)", fontsize=14, fontweight="bold"
     )
     ax.tick_params(axis="x", labelsize=12)
 
-    ax.set_title(f"Register means on {factor} across languages", fontsize=18, pad=14)
+    ax.set_title(f"Register means on {dim} across languages", fontsize=18, pad=14)
 
     ax.legend(
         title="Language",
@@ -280,7 +288,7 @@ def main():
     for factor in args.factors:
         if not factor.startswith("F"):
             factor = f"F{factor}"
-        out_path = output_dir / f"{factor}_comparison_{lang_suffix}.png"
+        out_path = output_dir / f"Dim{factor[1:]}_comparison_{lang_suffix}.png"
         plot_dimension(
             all_data,
             factor,

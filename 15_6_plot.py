@@ -50,6 +50,13 @@ PALETTE = [
 ]
 
 
+def display_name(factor):
+    """Convert 'F1' to 'Dimension 1' for plot labels."""
+    if factor.startswith("F") and factor[1:].isdigit():
+        return f"Dimension {factor[1:]}"
+    return factor
+
+
 def bootstrap_ci(vals, n_boot=2000, ci=95, seed=0):
     """Bootstrap 95% CI of the mean."""
     rng = np.random.default_rng(seed)
@@ -192,9 +199,11 @@ def plot_factor_pair(
     # Light grid
     ax.grid(True, alpha=0.15, linestyle="-")
 
-    ax.set_xlabel(fx, fontsize=16, fontweight="bold")
-    ax.set_ylabel(fy, fontsize=16, fontweight="bold")
-    ax.set_title(f"{title_prefix}: {fx} vs {fy}", fontsize=18, pad=14)
+    ax.set_xlabel(display_name(fx), fontsize=16, fontweight="bold")
+    ax.set_ylabel(display_name(fy), fontsize=16, fontweight="bold")
+    ax.set_title(
+        f"{title_prefix}: {display_name(fx)} vs {display_name(fy)}", fontsize=18, pad=14
+    )
     ax.tick_params(labelsize=12)
 
     # Pad axes slightly beyond data range
