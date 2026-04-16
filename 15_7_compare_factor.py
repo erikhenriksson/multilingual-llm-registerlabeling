@@ -225,6 +225,12 @@ def main():
         help="Language subdirs to include (default: all)",
     )
     ap.add_argument(
+        "--exclude-langs",
+        nargs="*",
+        default=[],
+        help="Language subdirs to exclude (e.g. --exclude-langs eng_Latn cmn)",
+    )
+    ap.add_argument(
         "--factors",
         nargs="*",
         default=["F1"],
@@ -246,6 +252,12 @@ def main():
     else:
         subdirs = [d for d in sorted(fa_root.iterdir()) if d.is_dir()]
 
+    exclude = set(args.exclude_langs)
+    if exclude:
+        before = len(subdirs)
+        subdirs = [d for d in subdirs if d.name not in exclude]
+        log.info(f"Excluding {before - len(subdirs)} language(s): {sorted(exclude)}")
+
     all_data = []
     for sub in subdirs:
         scores_path = sub / "scores.parquet"
@@ -260,11 +272,15 @@ def main():
         log.error("No data loaded")
         return
 
+    # Build filename suffix from included languages
+    lang_keys = sorted(d[0] for d in all_data)
+    lang_suffix = "_".join(lang_keys)
+
     output_dir = Path(args.output_dir)
     for factor in args.factors:
         if not factor.startswith("F"):
             factor = f"F{factor}"
-        out_path = output_dir / f"{factor}_comparison.png"
+        out_path = output_dir / f"{factor}_comparison_{lang_suffix}.png"
         plot_dimension(
             all_data,
             factor,
