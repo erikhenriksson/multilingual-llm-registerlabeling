@@ -43,7 +43,7 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-META_COLS = ["doc_id", "segment_idx", "label", "n_tokens", "n_sents"]
+META_COLS = ["doc_id", "source", "segment_idx", "label", "n_tokens", "n_sents"]
 
 
 def parallel_analysis(
@@ -252,7 +252,25 @@ def main():
 
     filtered_dir = Path(args.filtered_dir)
     if args.files:
-        files = [filtered_dir / f for f in args.files]
+        files = []
+        for f in args.files:
+            # Be forgiving about which name form the user passed:
+            # 'eng_Latn_parsed.jsonl', 'eng_Latn_features.parquet',
+            # 'eng_Latn_filtered.parquet', 'eng_Latn', and bare stems
+            # should all resolve to filtered_dir/{stem}_filtered.parquet.
+            stem = Path(f).stem
+            for suffix in ("_parsed", "_features", "_filtered"):
+                if stem.endswith(suffix):
+                    stem = stem[: -len(suffix)]
+                    break
+            resolved = filtered_dir / f"{stem}_filtered.parquet"
+            if not resolved.exists():
+                log.error(
+                    f"Could not find {resolved} (from --files argument '{f}'). "
+                    f"Did you run smc_filter.py?"
+                )
+                return
+            files.append(resolved)
     else:
         files = sorted(filtered_dir.glob("*_filtered.parquet"))
 

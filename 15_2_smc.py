@@ -169,13 +169,17 @@ def process_file(
     X_final = X[keep]
 
     # Recombine with metadata
-    out = pd.concat([meta.reset_index(drop=True), X_final.reset_index(drop=True)], axis=1)
+    out = pd.concat(
+        [meta.reset_index(drop=True), X_final.reset_index(drop=True)], axis=1
+    )
     filtered_out.parent.mkdir(parents=True, exist_ok=True)
     out.to_parquet(filtered_out, index=False)
     log.info(f"  Wrote {len(out)} rows × {X_final.shape[1]} features → {filtered_out}")
 
     # Summary stats
-    log.info(f"  SMC summary: min={smc.min():.3f}, median={smc.median():.3f}, max={smc.max():.3f}")
+    log.info(
+        f"  SMC summary: min={smc.min():.3f}, median={smc.median():.3f}, max={smc.max():.3f}"
+    )
 
 
 def main():
