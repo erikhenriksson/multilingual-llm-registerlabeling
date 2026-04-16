@@ -1,16 +1,10 @@
 #!/usr/bin/env python3
 """
-Plot MDA factor scores in 2D, colored by register label.
+Plot MDA factor scores in 2D: register centroids with 95% CI error bars.
 
-Three plot modes (--mode):
-  means    : centroids + 95% CI ellipses of the mean (default; best for large N)
-  density  : 2D KDE contours per register + centroids
-  scatter  : raw scatter + centroids (only useful for small N)
-
-The key insight for large N: you care about where each register's *mean*
-sits and whether means are significantly separated — not where individual
-segments fall. The mean-CI ellipse shrinks with sqrt(N), so at 60k segments
-the ellipses are tiny and show real separation clearly.
+Clean, presentation-ready plots. One point per register, crosshair error
+bars showing 95% CI of the mean on each axis. No scatter, no rings, no
+clutter.
 
 Input:  fa_results/{lang}_{script}/scores.parquet
 Output: plots/{lang}_{script}/F{x}_vs_F{y}.png
@@ -27,8 +21,6 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from matplotlib.patches import Ellipse
-from scipy import stats
 
 logging.basicConfig(
     level=logging.INFO,
@@ -47,40 +39,26 @@ PALETTE = [
     "#911eb4",
     "#42d4f4",
     "#f032e6",
-    "#bfef45",
-    "#fabed4",
-    "#469990",
-    "#dcbeff",
     "#9A6324",
-    "#fffac8",
+    "#469990",
     "#800000",
-    "#aaffc3",
     "#808000",
-    "#ffd8b1",
     "#000075",
     "#a9a9a9",
     "#000000",
+    "#dcbeff",
 ]
 
 
-def make_ellipse(mean_x, mean_y, cov, scale, **kwargs):
-    """Create a matplotlib Ellipse from a 2x2 covariance matrix.
-
-    scale: chi2 critical value (5.991 for 95% population, or
-           5.991/N for 95% CI of the mean).
-    """
-    eigenvalues, eigenvectors = np.linalg.eigh(cov)
-    order = eigenvalues.argsort()[::-1]
-    eigenvalues = eigenvalues[order]
-    eigenvectors = eigenvectors[:, order]
-    angle = np.degrees(np.arctan2(eigenvectors[1, 0], eigenvectors[0, 0]))
-    # Clamp negative eigenvalues from numerical noise
-    eigenvalues = np.maximum(eigenvalues, 0)
-    width = 2 * np.sqrt(scale * eigenvalues[0])
-    height = 2 * np.sqrt(scale * eigenvalues[1])
-    return Ellipse(
-        xy=(mean_x, mean_y), width=width, height=height, angle=angle, **kwargs
+def bootstrap_ci(vals, n_boot=2000, ci=95, seed=0):
+    """Bootstrap 95% CI of the mean."""
+    rng = np.random.default_rng(seed)
+    means = np.array(
+        [rng.choice(vals, size=len(vals), replace=True).mean() for _ in range(n_boot)]
     )
+    lo = np.percentile(means, (100 - ci) / 2)
+    hi = np.percentile(means, 100 - (100 - ci) / 2)
+    return lo, hi
 
 
 def plot_factor_pair(
@@ -89,204 +67,140 @@ def plot_factor_pair(
     fy,
     output_path,
     title_prefix,
-    mode,
-    point_size,
-    alpha,
     figsize,
     dpi,
-    contour_levels,
-    sd_rings,
+    n_boot,
+    use_bootstrap,
 ):
     labels = sorted(scores["label"].unique())
     colors = {lbl: PALETTE[i % len(PALETTE)] for i, lbl in enumerate(labels)}
 
     fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
 
-    # ── Scatter or density background ─────────────────────────────────────
-    if mode == "scatter":
-        for lbl in labels:
-            sub = scores[scores["label"] == lbl]
-            ax.scatter(
-                sub[fx],
-                sub[fy],
-                c=colors[lbl],
-                s=point_size,
-                alpha=alpha,
-                label=lbl,
-                edgecolors="none",
-                rasterized=True,
-            )
-    elif mode == "density":
-        for lbl in labels:
-            sub = scores[scores["label"] == lbl]
-            if len(sub) < 20:
-                continue
-            try:
-                xy = np.vstack([sub[fx].values, sub[fy].values])
-                kde = stats.gaussian_kde(xy)
-                # Grid
-                xmin, xmax = sub[fx].quantile(0.01), sub[fx].quantile(0.99)
-                ymin, ymax = sub[fy].quantile(0.01), sub[fy].quantile(0.99)
-                pad = 0.3
-                xx, yy = np.mgrid[
-                    xmin - pad : xmax + pad : 100j,
-                    ymin - pad : ymax + pad : 100j,
-                ]
-                zz = kde(np.vstack([xx.ravel(), yy.ravel()])).reshape(xx.shape)
-                ax.contour(
-                    xx,
-                    yy,
-                    zz,
-                    levels=contour_levels,
-                    colors=[colors[lbl]],
-                    linewidths=1.2,
-                    alpha=0.7,
-                )
-                # Filled lightest contour for background
-                ax.contourf(
-                    xx,
-                    yy,
-                    zz,
-                    levels=[zz.max() * 0.1, zz.max()],
-                    colors=[colors[lbl]],
-                    alpha=0.06,
-                )
-            except Exception as e:
-                log.warning(f"  KDE failed for {lbl}: {e}")
-
-    # ── Centroids + mean-CI ellipses (always shown) ──────────────────────
-    chi2_95 = 5.991  # chi2 with 2 df, p=0.05
-
+    # Compute means and CIs
+    plot_data = []
     for lbl in labels:
         sub = scores[scores["label"] == lbl]
         n = len(sub)
-        if n < 3:
-            continue
-        mx, my = sub[fx].mean(), sub[fy].mean()
-        cov = np.cov(sub[fx].values, sub[fy].values)
+        mx = sub[fx].mean()
+        my = sub[fy].mean()
 
-        # 95% CI of the mean: covariance / N
-        cov_mean = cov / n
-        ell_mean = make_ellipse(
-            mx,
-            my,
-            cov_mean,
-            chi2_95,
-            facecolor=colors[lbl],
-            edgecolor=colors[lbl],
-            alpha=0.35,
-            linewidth=2,
-            linestyle="-",
+        if use_bootstrap:
+            x_lo, x_hi = bootstrap_ci(sub[fx].values, n_boot=n_boot)
+            y_lo, y_hi = bootstrap_ci(sub[fy].values, n_boot=n_boot)
+        else:
+            # Parametric: mean ± 1.96 * SE
+            x_se = sub[fx].std() / np.sqrt(n)
+            y_se = sub[fy].std() / np.sqrt(n)
+            x_lo, x_hi = mx - 1.96 * x_se, mx + 1.96 * x_se
+            y_lo, y_hi = my - 1.96 * y_se, my + 1.96 * y_se
+
+        plot_data.append(
+            {
+                "label": lbl,
+                "n": n,
+                "mx": mx,
+                "my": my,
+                "x_lo": x_lo,
+                "x_hi": x_hi,
+                "y_lo": y_lo,
+                "y_hi": y_hi,
+            }
         )
-        ax.add_patch(ell_mean)
 
-        # Optional: SD rings (population spread, at 1 or 2 SD)
-        for sd in sd_rings:
-            ell_pop = make_ellipse(
-                mx,
-                my,
-                cov,
-                sd**2,
-                facecolor="none",
-                edgecolor=colors[lbl],
-                linewidth=0.8,
-                linestyle=":",
-                alpha=0.4,
-            )
-            ax.add_patch(ell_pop)
-
-        # Centroid marker
+    # Plot error bars + points
+    for d in plot_data:
+        ax.errorbar(
+            d["mx"],
+            d["my"],
+            xerr=[[d["mx"] - d["x_lo"]], [d["x_hi"] - d["mx"]]],
+            yerr=[[d["my"] - d["y_lo"]], [d["y_hi"] - d["my"]]],
+            fmt="none",
+            ecolor=colors[d["label"]],
+            elinewidth=1.5,
+            capsize=4,
+            capthick=1.5,
+            zorder=5,
+        )
         ax.scatter(
-            mx,
-            my,
-            c=colors[lbl],
-            s=180,
-            marker="X",
-            edgecolors="black",
-            linewidths=0.8,
+            d["mx"],
+            d["my"],
+            c=colors[d["label"]],
+            s=120,
+            marker="o",
+            edgecolors="white",
+            linewidths=1.0,
             zorder=10,
         )
 
-    # ── Labels: use adjustText if available, else basic offset ───────────
-    means = scores.groupby("label")[[fx, fy]].mean()
-    texts = []
+    # Label placement using adjustText if available, else manual offsets
     try:
         from adjustText import adjust_text
 
-        for lbl in labels:
-            mx, my = means.loc[lbl, fx], means.loc[lbl, fy]
+        texts = []
+        for d in plot_data:
             t = ax.text(
-                mx,
-                my,
-                lbl,
+                d["mx"],
+                d["my"],
+                f"  {d['label']}",
                 fontsize=9,
                 fontweight="bold",
-                color=colors[lbl],
+                color=colors[d["label"]],
+                va="center",
                 zorder=12,
             )
             texts.append(t)
-        adjust_text(texts, ax=ax, arrowprops=dict(arrowstyle="-", color="grey", lw=0.5))
+        adjust_text(
+            texts,
+            ax=ax,
+            arrowprops=dict(arrowstyle="-", color="grey", lw=0.5),
+            expand=(1.5, 1.5),
+        )
     except ImportError:
-        # Fallback: stagger offsets to reduce overlap
-        offsets = [
-            (10, 10),
-            (-10, 10),
-            (10, -10),
-            (-10, -10),
-            (15, 0),
-            (-15, 0),
-            (0, 15),
-            (0, -15),
-        ]
-        for i, lbl in enumerate(labels):
-            mx, my = means.loc[lbl, fx], means.loc[lbl, fy]
-            ox, oy = offsets[i % len(offsets)]
+        # Stagger labels to reduce overlap
+        # Sort by y then alternate left/right
+        sorted_data = sorted(plot_data, key=lambda d: d["my"], reverse=True)
+        for i, d in enumerate(sorted_data):
+            ha = "left" if i % 2 == 0 else "right"
+            offset_x = 12 if ha == "left" else -12
             ax.annotate(
-                lbl,
-                (mx, my),
+                d["label"],
+                (d["mx"], d["my"]),
                 textcoords="offset points",
-                xytext=(ox, oy),
+                xytext=(offset_x, 0),
                 fontsize=9,
                 fontweight="bold",
-                color=colors[lbl],
+                color=colors[d["label"]],
+                va="center",
+                ha=ha,
                 zorder=12,
                 arrowprops=dict(arrowstyle="-", color="grey", lw=0.5),
             )
 
-    ax.set_xlabel(fx, fontsize=12)
-    ax.set_ylabel(fy, fontsize=12)
-    ax.set_title(f"{title_prefix}: {fx} vs {fy}", fontsize=13)
-    ax.axhline(0, color="grey", linewidth=0.5, linestyle=":")
-    ax.axvline(0, color="grey", linewidth=0.5, linestyle=":")
+    # Axis lines at zero
+    ax.axhline(0, color="#cccccc", linewidth=0.8, linestyle="-", zorder=1)
+    ax.axvline(0, color="#cccccc", linewidth=0.8, linestyle="-", zorder=1)
 
-    # Legend (for scatter/density modes; means mode uses inline labels)
-    if mode in ("scatter", "density"):
-        # For density mode, scatter didn't add labels, so add proxy patches
-        if mode == "density":
-            from matplotlib.patches import Patch
+    # Light grid
+    ax.grid(True, alpha=0.15, linestyle="-")
 
-            handles = [
-                Patch(facecolor=colors[lbl], alpha=0.5, label=lbl) for lbl in labels
-            ]
-        else:
-            handles = None  # scatter already set labels
-        n_labels = len(labels)
-        if n_labels > 8:
-            ax.legend(
-                handles=handles,
-                fontsize=7,
-                loc="center left",
-                bbox_to_anchor=(1.02, 0.5),
-                markerscale=3,
-                frameon=False,
-            )
-            fig.subplots_adjust(right=0.78)
-        else:
-            ax.legend(
-                handles=handles, fontsize=8, markerscale=3, frameon=True, fancybox=True
-            )
+    ax.set_xlabel(fx, fontsize=13, fontweight="bold")
+    ax.set_ylabel(fy, fontsize=13, fontweight="bold")
+    ax.set_title(f"{title_prefix}: {fx} vs {fy}", fontsize=14, pad=12)
 
-    ax.set_aspect("equal", adjustable="datalim")
+    # Pad axes slightly beyond data range
+    all_x = [d["mx"] for d in plot_data]
+    all_y = [d["my"] for d in plot_data]
+    x_range = max(all_x) - min(all_x) or 1
+    y_range = max(all_y) - min(all_y) or 1
+    pad_x = x_range * 0.35
+    pad_y = y_range * 0.35
+    ax.set_xlim(min(all_x) - pad_x, max(all_x) + pad_x)
+    ax.set_ylim(min(all_y) - pad_y, max(all_y) + pad_y)
+
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+
     fig.tight_layout()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=dpi, bbox_inches="tight")
@@ -339,30 +253,13 @@ def main():
         help="Factor pairs (e.g. '1,2' '1,3'). Use 'all' for all combos.",
     )
     ap.add_argument(
-        "--mode",
-        default="means",
-        choices=["means", "density", "scatter"],
-        help="Plot mode. 'means' shows centroids + CI ellipses only (best "
-        "for large N). 'density' adds KDE contours. 'scatter' shows "
-        "all points (only for small N).",
+        "--bootstrap",
+        action="store_true",
+        help="Use bootstrap CIs (slower, better for clustered data). "
+        "Default is parametric SE.",
     )
-    ap.add_argument("--point-size", type=float, default=2.0)
-    ap.add_argument("--alpha", type=float, default=0.15)
-    ap.add_argument(
-        "--sd-rings",
-        type=float,
-        nargs="*",
-        default=[1.0],
-        help="Draw population SD rings at these SD values (e.g. 1 2). "
-        "Pass --sd-rings with no args to disable.",
-    )
-    ap.add_argument(
-        "--contour-levels",
-        type=int,
-        default=4,
-        help="Number of KDE contour levels (density mode).",
-    )
-    ap.add_argument("--figsize", type=float, nargs=2, default=[10, 8])
+    ap.add_argument("--n-boot", type=int, default=2000)
+    ap.add_argument("--figsize", type=float, nargs=2, default=[10, 7])
     ap.add_argument("--dpi", type=int, default=150)
     args = ap.parse_args()
 
@@ -388,13 +285,10 @@ def main():
             scores_path,
             out_dir,
             pairs=pairs,
-            mode=args.mode,
-            point_size=args.point_size,
-            alpha=args.alpha,
             figsize=tuple(args.figsize),
             dpi=args.dpi,
-            contour_levels=args.contour_levels,
-            sd_rings=args.sd_rings if args.sd_rings else [],
+            n_boot=args.n_boot,
+            use_bootstrap=args.bootstrap,
         )
 
 
