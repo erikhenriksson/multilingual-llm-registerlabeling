@@ -220,11 +220,17 @@ def extract_segment_features(parse, vocab):
     return feats_out, n_content, n_sents
 
 
-def process_group(group_name, input_paths, output_path, vocab_path, min_tokens):
+def process_group(
+    group_name, input_paths, output_path, vocab_path, min_tokens, exclude_labels=None
+):
     """Process one language group. Multiple inputs are concatenated
     with source-prefixed doc_ids to keep documents distinct.
     """
+    if exclude_labels is None:
+        exclude_labels = set()
     log.info(f"Processing group: {group_name}")
+    if exclude_labels:
+        log.info(f"  Excluding labels: {sorted(exclude_labels)}")
     for p in input_paths:
         log.info(f"  Input: {p.name}")
 
@@ -280,6 +286,8 @@ def process_group(group_name, input_paths, output_path, vocab_path, min_tokens):
                     parse = seg.get("parse") or {}
                     label = seg.get("label", "")
                     if not parse:
+                        continue
+                    if label in exclude_labels:
                         continue
 
                     result = extract_segment_features(parse, vocab)
@@ -350,6 +358,13 @@ def main():
         help="Drop segments with fewer than this many content tokens. "
         "Recommend 50-100 for stable rate features.",
     )
+    ap.add_argument(
+        "--exclude-labels",
+        nargs="*",
+        default=["Cannot rate"],
+        help="Drop segments with these labels. Default excludes 'Cannot rate'. "
+        "Pass --exclude-labels with no arguments to disable.",
+    )
     args = ap.parse_args()
 
     parses_dir = Path(args.parses_dir)
@@ -383,7 +398,14 @@ def main():
     for gname, group_files in sorted(groups.items()):
         out = output_dir / f"{gname}_features.parquet"
         vocab_out = output_dir / f"{gname}_vocabulary.json"
-        process_group(gname, group_files, out, vocab_out, min_tokens=args.min_tokens)
+        process_group(
+            gname,
+            group_files,
+            out,
+            vocab_out,
+            min_tokens=args.min_tokens,
+            exclude_labels=set(args.exclude_labels) if args.exclude_labels else set(),
+        )
 
 
 if __name__ == "__main__":
