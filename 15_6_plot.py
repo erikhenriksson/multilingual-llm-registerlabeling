@@ -276,9 +276,6 @@ def plot_factor_pair_combined(
             d = compute_point(sub, fx, fy, use_bootstrap, n_boot)
             d["label"] = lbl
             d["lang"] = lang
-            # Display label includes language so placement algorithm treats
-            # them as distinct text targets.
-            d["display_label"] = f"{lbl} [{lang}]"
             plot_data.append(d)
 
     if not plot_data:
@@ -288,12 +285,6 @@ def plot_factor_pair_combined(
 
     for d in plot_data:
         _draw_point(ax, d, colors[d["label"]], marker=markers[d["lang"]])
-
-    # Label placement: use display_label so "news [en]" and "news [es]" don't
-    # collide as identical text targets.
-    colors_for_labels = {d["display_label"]: colors[d["label"]] for d in plot_data}
-    label_data = [{**d, "label": d["display_label"]} for d in plot_data]
-    _place_labels(ax, label_data, colors_for_labels)
 
     _finalize_axes(
         ax,
