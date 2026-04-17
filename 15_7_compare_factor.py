@@ -201,7 +201,7 @@ def plot_dimension(
     if znormalize:
         xlabel = f"{dim} score (z-normalized within language)"
     else:
-        xlabel = f"{dim} score (raw, language-native scale)"
+        xlabel = f"{dim} score"
     ax.set_xlabel(xlabel, fontsize=18, fontweight="bold")
     ax.tick_params(axis="x", labelsize=16)
 
