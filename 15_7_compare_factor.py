@@ -6,8 +6,12 @@ Horizontal dot plot: each row is a register, each dot is a language.
 Shows at a glance whether the register ordering on a given dimension
 is consistent across languages.
 
+For each requested factor, TWO plots are saved:
+  - *_znorm.png : scores z-normalized within each language (comparable scales)
+  - *_raw.png   : raw factor scores (language-native scales; direct magnitudes)
+
 Input:  fa_results/{lang}/scores.parquet  (one per language)
-Output: plots/dimension_comparison/F{n}_comparison.png
+Output: plots/dimension_comparison/F{n}_comparison_*_{znorm|raw}.png
 """
 
 import argparse
@@ -67,33 +71,34 @@ def plot_dimension(
     figsize,
     dpi,
     sort_by,
+    znormalize,
 ):
     """
     all_data: list of (lang_key, scores_df) tuples
+
+    znormalize: if True, z-normalize factor scores within each language before
+                aggregating. If False, use raw factor scores.
     """
-    # Compute mean factor score per (language, register)
-    # Z-score normalize within each language first, so all languages
-    # are on the same scale (mean=0, sd=1 within each language).
-    # This makes the plot show relative register positions, not absolute
-    # factor scores which are incommensurable across languages.
     records = []
     for lang, scores in all_data:
         if factor not in scores.columns:
             log.warning(f"  {lang}: {factor} not found, skipping")
             continue
-        # Normalize within this language
-        lang_mean = scores[factor].mean()
-        lang_sd = scores[factor].std()
-        if lang_sd == 0:
-            log.warning(f"  {lang}: zero variance on {factor}, skipping")
-            continue
+
         scores = scores.copy()
-        scores[factor] = (scores[factor] - lang_mean) / lang_sd
+
+        if znormalize:
+            lang_mean = scores[factor].mean()
+            lang_sd = scores[factor].std()
+            if lang_sd == 0:
+                log.warning(f"  {lang}: zero variance on {factor}, skipping")
+                continue
+            scores[factor] = (scores[factor] - lang_mean) / lang_sd
 
         for lbl, grp in scores.groupby("label"):
             n = len(grp)
             mean = grp[factor].mean()
-            se = grp[factor].std() / np.sqrt(n)
+            se = grp[factor].std() / np.sqrt(n) if n > 1 else 0.0
             records.append(
                 {
                     "lang": lang,
@@ -160,10 +165,10 @@ def plot_dimension(
                 xerr=[[row["mean"] - row["ci_lo"]], [row["ci_hi"] - row["mean"]]],
                 fmt="none",
                 ecolor=style["color"],
-                elinewidth=1.5,
-                capsize=4,
-                capthick=1.5,
-                alpha=0.7,
+                elinewidth=2.5,
+                capsize=7,
+                capthick=2.5,
+                alpha=0.75,
                 zorder=5,
             )
 
@@ -179,31 +184,33 @@ def plot_dimension(
             ys,
             marker="o",
             c=style["color"],
-            s=100,
+            s=200,
             edgecolors="white",
-            linewidths=0.8,
+            linewidths=1.2,
             label=style["name"],
             zorder=10,
         )
 
     # Y axis: register names
     ax.set_yticks(range(n_regs))
-    ax.set_yticklabels(register_order, fontsize=13)
+    ax.set_yticklabels(register_order, fontsize=18)
     ax.set_ylim(-0.6, n_regs - 0.4)
 
     # X axis
     dim = display_name(factor)
-    ax.set_xlabel(
-        f"{dim} score (z-normalized within language)", fontsize=14, fontweight="bold"
-    )
-    ax.tick_params(axis="x", labelsize=12)
+    if znormalize:
+        xlabel = f"{dim} score (z-normalized within language)"
+    else:
+        xlabel = f"{dim} score (raw, language-native scale)"
+    ax.set_xlabel(xlabel, fontsize=18, fontweight="bold")
+    ax.tick_params(axis="x", labelsize=16)
 
-    ax.set_title(f"Register means on {dim} across languages", fontsize=18, pad=14)
+    ax.set_title(f"Register means on {dim} across languages", fontsize=22, pad=16)
 
     ax.legend(
         title="Language",
-        title_fontsize=12,
-        fontsize=11,
+        title_fontsize=16,
+        fontsize=14,
         loc="lower right",
         frameon=True,
         fancybox=True,
@@ -219,7 +226,7 @@ def plot_dimension(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=dpi, bbox_inches="tight")
     plt.close(fig)
-    log.info(f"  {factor} → {output_path}")
+    log.info(f"  {factor} ({'znorm' if znormalize else 'raw'}) → {output_path}")
 
 
 def main():
@@ -288,15 +295,19 @@ def main():
     for factor in args.factors:
         if not factor.startswith("F"):
             factor = f"F{factor}"
-        out_path = output_dir / f"Dim{factor[1:]}_comparison_{lang_suffix}.png"
-        plot_dimension(
-            all_data,
-            factor,
-            out_path,
-            figsize=tuple(args.figsize),
-            dpi=args.dpi,
-            sort_by=args.sort_by,
-        )
+        for znormalize, tag in [(True, "znorm"), (False, "raw")]:
+            out_path = (
+                output_dir / f"Dim{factor[1:]}_comparison_{lang_suffix}_{tag}.png"
+            )
+            plot_dimension(
+                all_data,
+                factor,
+                out_path,
+                figsize=tuple(args.figsize),
+                dpi=args.dpi,
+                sort_by=args.sort_by,
+                znormalize=znormalize,
+            )
 
 
 if __name__ == "__main__":
