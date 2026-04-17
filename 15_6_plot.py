@@ -115,7 +115,7 @@ def _draw_point(ax, d, color, marker, point_size=120):
     )
 
 
-def _finalize_axes(ax, fx, fy, title, plot_data):
+def _finalize_axes(ax, fx, fy, title, plot_data, pad_frac=0.45):
     """Zero lines, grid, labels, limits, spines."""
     ax.axhline(0, color="#cccccc", linewidth=0.8, linestyle="-", zorder=1)
     ax.axvline(0, color="#cccccc", linewidth=0.8, linestyle="-", zorder=1)
@@ -129,8 +129,8 @@ def _finalize_axes(ax, fx, fy, title, plot_data):
     all_y = [d["my"] for d in plot_data]
     x_range = (max(all_x) - min(all_x)) or 1
     y_range = (max(all_y) - min(all_y)) or 1
-    pad_x = x_range * 0.45
-    pad_y = y_range * 0.45
+    pad_x = x_range * pad_frac
+    pad_y = y_range * pad_frac
     ax.set_xlim(min(all_x) - pad_x, max(all_x) + pad_x)
     ax.set_ylim(min(all_y) - pad_y, max(all_y) + pad_y)
     ax.spines["top"].set_visible(False)
@@ -292,9 +292,8 @@ def plot_factor_pair_combined(
         fy,
         f"{title_prefix}: {display_name(fx)} vs {display_name(fy)}",
         plot_data,
+        pad_frac=0.05,
     )
-
-    # Two legends: languages (by marker) and registers (by color).
     lang_handles = [
         mlines.Line2D(
             [],
