@@ -197,7 +197,7 @@ def main():
     ap.add_argument(
         "--collinearity-threshold",
         type=float,
-        default=0.98,
+        default=0.99,
         help="Drop feature pairs correlated above this before SMC.",
     )
     ap.add_argument(
